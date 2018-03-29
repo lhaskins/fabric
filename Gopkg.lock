@@ -300,6 +300,7 @@
     "format",
     "gbytes",
     "ghttp",
+    "gexec",
     "internal/assertion",
     "internal/asyncassertion",
     "internal/oraclematcher",
@@ -483,7 +484,10 @@
 [[projects]]
   branch = "master"
   name = "github.com/tedsuo/ifrit"
-  packages = ["."]
+  packages = [
+    ".",
+    "ginkgomon"
+  ]
   revision = "d787ed1df88a79d9e9b1072738a40500b8ec22ee"
 
 [[projects]]
