@@ -482,13 +482,14 @@
   revision = "169b1b37be738edb2813dab48c97a549bcf99bb5"
 
 [[projects]]
-  branch = "master"
+  branch = "expose-err"
   name = "github.com/tedsuo/ifrit"
   packages = [
     ".",
     "ginkgomon"
   ]
-  revision = "d787ed1df88a79d9e9b1072738a40500b8ec22ee"
+  revision = "5a2474596b41a540d8f72e2e11e18579cb3c5a05"
+  source = "https://github.com/sykesm/ifrit"
 
 [[projects]]
   name = "github.com/uber-go/tally"

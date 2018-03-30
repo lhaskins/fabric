@@ -28,7 +28,7 @@ var _ = Describe("CryptoGen", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		cryptogen = &runner.Cryptogen{
-			Path:   cryptogenPath,
+			Path:   components.Paths["cryptogen"],
 			Config: filepath.Join("testdata", "cryptogen-config.yaml"),
 			Output: tempDir,
 		}

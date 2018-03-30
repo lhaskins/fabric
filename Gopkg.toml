@@ -128,8 +128,9 @@ ignored = [
   revision = "a3f3340b5840cee44f372bddb5880fcbc419b46a"
 
 [[constraint]]
-  branch = "master"
+  branch = "expose-err"
   name = "github.com/tedsuo/ifrit"
+  source = "https://github.com/sykesm/ifrit"
 
 [prune]
   go-tests = true

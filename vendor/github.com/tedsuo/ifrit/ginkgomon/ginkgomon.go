@@ -73,11 +73,27 @@ func (r *Runner) ExitCode() int {
 
 // Buffer returns a gbytes.Buffer, for use with the gbytes.Say matcher.
 func (r *Runner) Buffer() *gbytes.Buffer {
+	return r.Out()
+}
+
+// Out returns the gbytes.Buffer associated with the stdout stream.
+// For use with the gbytes.Say matcher.
+func (r *Runner) Out() *gbytes.Buffer {
 	if r.sessionReady == nil {
 		ginkgo.Fail(fmt.Sprintf("ginkgomon.Runner '%s' improperly created without using New", r.Name))
 	}
 	<-r.sessionReady
 	return r.session.Buffer()
+}
+
+// Err returns the gbytes.Buffer associated with the stderr stream.
+// For use with the gbytes.Say matcher.
+func (r *Runner) Err() *gbytes.Buffer {
+	if r.sessionReady == nil {
+		ginkgo.Fail(fmt.Sprintf("ginkgomon.Runner '%s' improperly created without using New", r.Name))
+	}
+	<-r.sessionReady
+	return r.session.Err
 }
 
 func (r *Runner) Run(sigChan <-chan os.Signal, ready chan<- struct{}) error {
