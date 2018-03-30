@@ -31,16 +31,14 @@ var _ = Describe("ConfigTxGen", func() {
 		tempDir, err = ioutil.TempDir("", "configtx")
 		Expect(err).NotTo(HaveOccurred())
 
-		data, err := ioutil.ReadFile(filepath.Join("testdata", "configtx.yaml"))
-		Expect(err).NotTo(HaveOccurred())
-		err = ioutil.WriteFile(filepath.Join(tempDir, "configtx.yaml"), data, 0775)
-		Expect(err).NotTo(HaveOccurred())
-
 		cryptogen := components.Cryptogen()
 		cryptogen.Config = filepath.Join("testdata", "cryptogen-config.yaml")
 		cryptogen.Output = filepath.Join(tempDir, "crypto-config")
-		cryptoProcess := ifrit.Invoke(cryptogen.Generate())
-		Eventually(cryptoProcess.Wait()).Should(Receive(BeNil()))
+
+		generate := cryptogen.Generate()
+		Expect(execute(generate)).To(Succeed())
+
+		copyFile(filepath.Join("testdata", "configtx.yaml"), filepath.Join(tempDir, "configtx.yaml"))
 	})
 
 	AfterEach(func() {

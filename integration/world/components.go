@@ -29,6 +29,10 @@ func (c *Components) Build() {
 	cryptogen, err := gexec.Build("github.com/hyperledger/fabric/common/tools/cryptogen")
 	Expect(err).NotTo(HaveOccurred())
 	c.Paths["cryptogen"] = cryptogen
+
+	orderer, err := gexec.Build("github.com/hyperledger/fabric/orderer")
+	Expect(err).NotTo(HaveOccurred())
+	c.Paths["orderer"] = orderer
 }
 
 func (c *Components) Cleanup() {
@@ -47,5 +51,11 @@ func (c *Components) Cryptogen() *runner.Cryptogen {
 func (c *Components) ConfigTxGen() *runner.ConfigTxGen {
 	return &runner.ConfigTxGen{
 		Path: c.Paths["configtxgen"],
+	}
+}
+
+func (c *Components) Orderer() *runner.Orderer {
+	return &runner.Orderer{
+		Path: c.Paths["orderer"],
 	}
 }
