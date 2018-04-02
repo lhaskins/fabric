@@ -17,10 +17,15 @@ type Orderer struct {
 	Path           string
 	ConfigDir      string
 	OrdererType    string
+	OrdererHome    string
 	LedgerLocation string
 	GenesisProfile string
+	GenesisFile    string
+	GenesisMethod  string
 	LocalMSPId     string
 	LocalMSPDir    string
+	ListenAddress  string
+	ListenPort     string
 	LogLevel       string
 }
 
@@ -34,6 +39,12 @@ func (o *Orderer) setupEnvironment(cmd *exec.Cmd) {
 	if o.GenesisProfile != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("ORDERER_GENERAL_GENESISPROFILE=%s", o.GenesisProfile))
 	}
+	if o.GenesisFile != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("ORDERER_GENERAL_GENESISFILE=%s", o.GenesisFile))
+	}
+	if o.GenesisMethod != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("ORDERER_GENERAL_GENESISMETHOD=%s", o.GenesisMethod))
+	}
 	if o.LogLevel != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("ORDERER_GENERAL_LOGLEVEL=%s", o.LogLevel))
 	}
@@ -46,6 +57,15 @@ func (o *Orderer) setupEnvironment(cmd *exec.Cmd) {
 	if o.OrdererType != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("CONFIGTX_ORDERER_ORDERERTYPE=%s", o.OrdererType))
 	}
+	if o.OrdererHome != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("ORDERER_HOME=%s", o.OrdererHome))
+	}
+	if o.ListenAddress != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("ORDERER_GENERAL_LISTENADDRESS=%s", o.ListenAddress))
+	}
+	if o.ListenPort != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("ORDERER_GENERAL_LISTENPORT=%s", o.ListenPort))
+	}
 }
 
 func (o *Orderer) New() *ginkgomon.Runner {
@@ -53,6 +73,7 @@ func (o *Orderer) New() *ginkgomon.Runner {
 	o.setupEnvironment(cmd)
 
 	return ginkgomon.New(ginkgomon.Config{
+		Name:    "orderer",
 		Command: cmd,
 	})
 }

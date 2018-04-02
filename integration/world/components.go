@@ -33,6 +33,10 @@ func (c *Components) Build() {
 	orderer, err := gexec.Build("github.com/hyperledger/fabric/orderer")
 	Expect(err).NotTo(HaveOccurred())
 	c.Paths["orderer"] = orderer
+
+	peer, err := gexec.Build("github.com/hyperledger/fabric/peer")
+	Expect(err).NotTo(HaveOccurred())
+	c.Paths["peer"] = peer
 }
 
 func (c *Components) Cleanup() {
@@ -57,5 +61,11 @@ func (c *Components) ConfigTxGen() *runner.ConfigTxGen {
 func (c *Components) Orderer() *runner.Orderer {
 	return &runner.Orderer{
 		Path: c.Paths["orderer"],
+	}
+}
+
+func (c *Components) Peer() *runner.Peer {
+	return &runner.Peer{
+		Path: c.Paths["peer"],
 	}
 }

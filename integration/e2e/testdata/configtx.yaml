@@ -1,0 +1,85 @@
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+---
+Profiles:
+  TwoOrgsOrdererGenesis:
+    Capabilities:
+      <<: *ChannelCapabilities
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+      Capabilities:
+        <<: *OrdererCapabilities
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+         - *OrdererOrg
+         - *Org1
+         - *Org2
+      Capabilities:
+         <<: *ApplicationCapabilities
+    Consortiums:
+      SampleConsortium:
+        Organizations:
+          - *Org1
+          - *Org2
+  TwoOrgsChannel:
+    Consortium: SampleConsortium
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *Org1
+        - *Org2
+      Capabilities:
+        <<: *ApplicationCapabilities
+
+Organizations:
+  - &OrdererOrg
+    Name: OrdererOrg
+    ID: OrdererMSP
+    #MSPDir: crypto/ordererOrganizations/example.com/msp
+    MSPDir: crypto/ordererOrganizations/example.com/orderers/orderer.example.com/msp
+  - &Org1
+    Name: Org1
+    ID: Org1MSP
+    #MSPDir: crypto/peerOrganizations/org1.example.com/msp
+    MSPDir: crypto/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
+    AnchorPeers:
+      - Host: 0.0.0.0
+        Port: 10051
+  - &Org2
+    Name: Org2
+    ID: Org2MSP
+    #MSPDir: crypto/peerOrganizations/org2.example.com/msp
+    MSPDir: crypto/peerOrganizations/org2.example.com/users/Admin@org2.example.com/msp
+    AnchorPeers:
+      - Host: 0.0.0.0
+        Port: 11051
+Orderer: &OrdererDefaults
+  OrdererType: solo
+  Addresses:
+    - 0.0.0.0:7050
+  BatchTimeout: 2s
+  BatchSize:
+    MaxMessageCount: 10
+    AbsoluteMaxBytes: 98 MB
+    PreferredMaxBytes: 512 KB
+  # Kafka:
+  #   Brokers:
+  #     - kafka0:9092
+  #     - kafka1:9092
+  #     - kafka2:9092
+  #     - kafka3:9092
+  Organizations:
+
+Application: &ApplicationDefaults
+  Organizations:
+Capabilities:
+  Global: &ChannelCapabilities
+    V1_1: true
+  Orderer: &OrdererCapabilities
+    V1_1: true
+  Application: &ApplicationCapabilities
+    V1_2: true

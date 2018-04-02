@@ -46,7 +46,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 })
 
 var _ = SynchronizedAfterSuite(func() {
+	// output, err := exec.Command("find", testDir, "-type", "f").Output()
+	// Expect(err).NotTo(HaveOccurred())
+	// fmt.Printf("\n---\n%s\n---\n", output)
 	os.RemoveAll(testDir)
 }, func() {
+	//fmt.Printf("\n---\n%s\n---\n", components.Paths)
 	components.Cleanup()
 })

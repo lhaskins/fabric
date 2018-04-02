@@ -46,6 +46,7 @@ func (c *ConfigTxGen) OutputBlock(extraArgs ...string) *ginkgomon.Runner {
 		append([]string{
 			"-outputBlock", c.Output,
 			"-profile", c.Profile,
+			"-channelID", c.ChannelID,
 		}, extraArgs...)...,
 	)
 	c.setupCommandEnv(cmd)

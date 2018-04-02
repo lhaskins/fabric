@@ -9,6 +9,7 @@ package runner_test
 import (
 	"encoding/json"
 	"io/ioutil"
+	"time"
 
 	"github.com/hyperledger/fabric/integration/world"
 	. "github.com/onsi/ginkgo"
@@ -54,7 +55,7 @@ func copyFile(src, dest string) {
 
 func execute(r ifrit.Runner) (err error) {
 	p := ifrit.Invoke(r)
-	Eventually(p.Ready()).Should(BeClosed())
-	Eventually(p.Wait()).Should(Receive(&err))
+	EventuallyWithOffset(1, p.Ready()).Should(BeClosed())
+	EventuallyWithOffset(1, p.Wait(), 5*time.Second).Should(Receive(&err))
 	return err
 }
