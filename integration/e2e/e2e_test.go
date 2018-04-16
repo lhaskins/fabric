@@ -10,14 +10,16 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/hyperledger/fabric/common/tools/configtxgen/localconfig"
+	"github.com/hyperledger/fabric/integration/world"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
+	"github.com/onsi/gomega/gbytes"
 
 	"github.com/tedsuo/ifrit"
 )
@@ -49,44 +51,165 @@ var _ = Describe("EndToEnd", func() {
 		}
 	})
 
-	It("does something?", func() {
+	It("executes a basic solo network with 2 orgs", func() {
+		By("construct crypto")
+		peerOrgs := []*localconfig.Organization{{
+			Name:   "Org1",
+			ID:     "Org1MSP",
+			MSPDir: filepath.Join("crypto", "peerOrganizations", "org1.example.com", "peers", "peer0.org1.example.com", "msp"),
+			AnchorPeers: []*localconfig.AnchorPeer{{
+				Host: "0.0.0.0",
+				Port: 10051,
+			}},
+		}, {
+			Name:   "Org2",
+			ID:     "Org2MSP",
+			MSPDir: filepath.Join("crypto", "peerOrganizations", "org2.example.com", "peers", "peer0.org2.example.com", "msp"),
+			AnchorPeers: []*localconfig.AnchorPeer{{
+				Host: "0.0.0.0",
+				Port: 11051,
+			},
+			}},
+		}
+
+		ordererOrgs := []*localconfig.Organization{{
+			Name:   "OrdererOrg",
+			ID:     "OrdererMSP",
+			MSPDir: filepath.Join("crypto", "ordererOrganizations", "example.com", "orderers", "orderer.example.com", "msp"),
+		}}
+
+		w := world.World{
+			Deployment: world.Deployment{
+				Channel: "testchannel",
+				Chaincode: world.Chaincode{
+					Name:     "mycc",
+					Version:  "1.0",
+					Path:     filepath.Join("simple", "cmd"),
+					GoPath:   filepath.Join(testdataDir, "chaincode"),
+					ExecPath: os.Getenv("PATH"),
+				},
+				InitArgs: `{"Args":["init","a","100","b","200"]}`,
+				Peers:    []string{"peer0.org1.example.com", "peer0.org2.example.com"},
+				Orderer:  "127.0.0.1:7050",
+				Policy:   `OR ('Org1MSP.member','Org2MSP.member')`,
+			},
+			OrdererOrgs: world.Organization{
+				Name:   "Orderer",
+				Domain: "example.com",
+				Orderers: []world.OrdererConfig{{
+					Name:        "orderer",
+					BrokerCount: 0,
+				}},
+			},
+			PeerOrgs: world.Organization{
+				Peers: []world.PeerOrgConfig{{
+					Name:          "Org1",
+					Domain:        "org1.example.com",
+					EnableNodeOUs: false,
+					UserCount:     1,
+					PeerCount:     1,
+				}, {
+					Name:          "Org2",
+					Domain:        "org2.example.com",
+					EnableNodeOUs: false,
+					UserCount:     1,
+					PeerCount:     1,
+				}},
+			},
+			Profiles: world.Profiles{map[string]localconfig.Profile{
+				"TwoOrgsChannel": localconfig.Profile{
+					Consortium: "SampleConsortium",
+					Application: &localconfig.Application{
+						Capabilities: map[string]bool{
+							"V1_2": true,
+						},
+						Organizations: peerOrgs,
+					},
+					Capabilities: map[string]bool{
+						"V1_1": true,
+					},
+				},
+				"TwoOrgsOrdererGenesis": localconfig.Profile{
+					Application: &localconfig.Application{
+						//Organizations: append(ordererOrgs, peerOrgs...),
+						Organizations: ordererOrgs,
+						Capabilities: map[string]bool{
+							"V1_2": true,
+						},
+					},
+					Orderer: &localconfig.Orderer{
+						BatchTimeout: 1 * time.Second,
+						BatchSize: localconfig.BatchSize{
+							MaxMessageCount:   1,
+							AbsoluteMaxBytes:  (uint32)(98 * 1024 * 1024),
+							PreferredMaxBytes: (uint32)(512 * 1024),
+						},
+						Organizations: ordererOrgs,
+						OrdererType:   "solo",
+						Addresses:     []string{"0.0.0.0:7050"},
+						Capabilities: map[string]bool{
+							"V1_1": true,
+						},
+					},
+					Consortiums: map[string]*localconfig.Consortium{
+						"SampleConsortium": &localconfig.Consortium{
+							Organizations: peerOrgs,
+						},
+					},
+					Capabilities: map[string]bool{
+						"V1_1": true,
+					},
+				},
+			}},
+		}
+
+		w.Construct(testDir)
+		Expect(filepath.Join(testDir, "configtx.yaml")).To(BeARegularFile())
+		Expect(filepath.Join(testDir, "crypto.yaml")).To(BeARegularFile())
+
 		By("generating crypto")
 		cryptogen := components.Cryptogen()
-		cryptogen.Config = filepath.Join(testdataDir, "crypto-config.yaml")
+		cryptogen.Config = filepath.Join(testDir, "crypto.yaml")
 		cryptogen.Output = filepath.Join(testDir, "crypto")
-		process := ifrit.Invoke(cryptogen.Generate())
-		Eventually(process.Wait()).Should(Receive(BeNil()))
+		r := cryptogen.Generate()
+		execute(r)
+		Expect(filepath.Join(testDir, "crypto", "peerOrganizations")).To(BeADirectory())
+		Expect(filepath.Join(testDir, "crypto", "ordererOrganizations")).To(BeADirectory())
 
 		By("building the orderer block")
 		configtxgen := components.ConfigTxGen()
-		copyFile(filepath.Join(testdataDir, "configtx.yaml"), filepath.Join(testDir, "configtx.yaml"))
 		configtxgen.ConfigDir = testDir
 		configtxgen.ChannelID = "systestchannel"
 		configtxgen.Profile = "TwoOrgsOrdererGenesis"
 		configtxgen.Output = filepath.Join(testDir, "systestchannel.block")
-		process = ifrit.Invoke(configtxgen.OutputBlock())
-		Eventually(process.Wait()).Should(Receive(BeNil()))
+		r = configtxgen.OutputBlock()
+		execute(r)
+		Expect(filepath.Join(testDir, "systestchannel.block")).To(BeARegularFile())
 
 		By("building the channel transaction file")
 		configtxgen.Profile = "TwoOrgsChannel"
-		configtxgen.ChannelID = "testchannel"
+		//configtxgen.ChannelID = "testchannel"
+		configtxgen.ChannelID = w.Deployment.Channel
 		configtxgen.Output = filepath.Join(testDir, "testchannel.tx")
-		process = ifrit.Invoke(configtxgen.OutputCreateChannelTx())
-		Eventually(process.Wait()).Should(Receive(BeNil()))
+		r = configtxgen.OutputCreateChannelTx()
+		execute(r)
+		Expect(filepath.Join(testDir, "testchannel.tx")).To(BeARegularFile())
 
 		By("building the channel transaction file for Org1 anchor peer")
 		configtxgen.Profile = "TwoOrgsChannel"
 		configtxgen.Output = filepath.Join(testDir, "Org1MSPanchors.tx")
 		configtxgen.AsOrg = "Org1"
-		process = ifrit.Invoke(configtxgen.OutputAnchorPeersUpdate())
-		Eventually(process.Wait()).Should(Receive(BeNil()))
+		r = configtxgen.OutputAnchorPeersUpdate()
+		execute(r)
+		Expect(filepath.Join(testDir, "Org1MSPanchors.tx")).To(BeARegularFile())
 
 		By("building the channel transaction file for Org2 anchor peer")
 		configtxgen.Profile = "TwoOrgsChannel"
 		configtxgen.Output = filepath.Join(testDir, "Org2MSPanchors.tx")
 		configtxgen.AsOrg = "Org2"
-		process = ifrit.Invoke(configtxgen.OutputAnchorPeersUpdate())
-		Eventually(process.Wait()).Should(Receive(BeNil()))
+		r = configtxgen.OutputAnchorPeersUpdate()
+		execute(r)
+		Expect(filepath.Join(testDir, "Org2MSPanchors.tx")).To(BeARegularFile())
 
 		By("starting a solo orderer")
 		orderer := components.Orderer()
@@ -155,216 +278,125 @@ var _ = Describe("EndToEnd", func() {
 		Consistently(peer2Process.Wait()).ShouldNot(Receive())
 
 		By("create channel")
-		cmd := exec.Command(components.Paths["peer"], "channel", "create", "-c", "testchannel", "-o", "127.0.0.1:7050", "-f", filepath.Join(testDir, "testchannel.tx"))
-		cmd.Env = append(
-			cmd.Env,
-			"FABRIC_CFG_PATH="+peer.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer.MSPConfigPath,
-			"CORE_PEER_ID="+peer.PeerID,
-			"CORE_PEER_ADDRESS="+peer.PeerListenAddress,
-		)
-		session, err := gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(session, 5*time.Second).Should(gexec.Exit(0))
+		adminPeer := components.Peer()
+		adminPeer.ConfigDir = peer.ConfigDir
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner := adminPeer.CreateChannel(w.Deployment.Channel, filepath.Join(testDir, "testchannel.tx"))
+		execute(adminRunner)
+		Eventually(ordererRunner.Err(), 5*time.Second).Should(gbytes.Say("Created and starting new chain testchannel"))
 
 		By("fetch genesis block on peer for Org1")
-		cmd = exec.Command(components.Paths["peer"], "channel", "fetch", "0", "-o", "127.0.0.1:7050", "-c", "testchannel", "--logging-level", "debug", filepath.Join(testDir, "peer1", "testchannel.block"))
-		cmd.Env = append(
-			cmd.Env,
-			"FABRIC_CFG_PATH="+peer.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer.MSPConfigPath,
-			"CORE_PEER_ID="+peer.PeerID,
-			"CORE_PEER_ADDRESS="+peer.PeerListenAddress,
-		)
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(session, 30*time.Second).Should(gexec.Exit(0))
+		adminPeer = components.Peer()
+		adminPeer.ConfigDir = peer.ConfigDir
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner = adminPeer.FetchChannel(w.Deployment.Channel, filepath.Join(testDir, "peer1", "testchannel.block"), "0")
+		execute(adminRunner)
+		Expect(filepath.Join(testDir, "peer1", "testchannel.block")).To(BeARegularFile())
 
 		By("fetch genesis block on peer for Org2")
-		cmd = exec.Command(components.Paths["peer"], "channel", "fetch", "0", "-o", "127.0.0.1:7050", "-c", "testchannel", "--logging-level", "debug", filepath.Join(testDir, "peer2", "testchannel.block"))
-		cmd.Env = append(
-			cmd.Env,
-			"FABRIC_CFG_PATH="+peer2.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer2.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer2.MSPConfigPath,
-			"CORE_PEER_ID="+peer2.PeerID,
-			"CORE_PEER_ADDRESS="+peer2.PeerListenAddress,
-		)
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(session, 30*time.Second).Should(gexec.Exit(0))
+		adminPeer2 := components.Peer()
+		adminPeer2.ConfigDir = peer2.ConfigDir
+		adminPeer2.MSPConfigPath = filepath.Join(testDir, "peer2", "crypto", "peerOrganizations", "org2.example.com", "users", "Admin@org2.example.com", "msp")
+		adminRunner2 := adminPeer2.FetchChannel(w.Deployment.Channel, filepath.Join(testDir, "peer2", "testchannel.block"), "0")
+		execute(adminRunner2)
+		Expect(filepath.Join(testDir, "peer2", "testchannel.block")).To(BeARegularFile())
 
 		By("join channel for Org1")
-		cmd = exec.Command(components.Paths["peer"], "channel", "join", "-b", filepath.Join(testDir, "peer1", "testchannel.block"))
-		cmd.Env = append(
-			cmd.Env,
-			"FABRIC_CFG_PATH="+peer.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer.MSPConfigPath,
-			"CORE_PEER_ID="+peer.PeerID,
-			"CORE_PEER_ADDRESS="+peer.PeerListenAddress,
-		)
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(session, 30*time.Second).Should(gexec.Exit(0))
+		adminPeer = components.Peer()
+		adminPeer.ConfigDir = peer.ConfigDir
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner = adminPeer.JoinChannel(filepath.Join(testDir, "peer1", "testchannel.block"))
+		execute(adminRunner)
+		Eventually(adminRunner.Err(), 5*time.Second).Should(gbytes.Say("Successfully submitted proposal to join channel"))
 
 		By("join channel for Org2")
-		cmd = exec.Command(components.Paths["peer"], "channel", "join", "-b", filepath.Join(testDir, "peer2", "testchannel.block"))
-		cmd.Env = append(
-			cmd.Env,
-			"FABRIC_CFG_PATH="+peer2.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer2.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer2.MSPConfigPath,
-			"CORE_PEER_ID="+peer2.PeerID,
-			"CORE_PEER_ADDRESS="+peer2.PeerListenAddress,
-		)
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(session, 30*time.Second).Should(gexec.Exit(0))
+		adminPeer2 = components.Peer()
+		adminPeer2.ConfigDir = peer2.ConfigDir
+		adminPeer2.MSPConfigPath = filepath.Join(testDir, "peer2", "crypto", "peerOrganizations", "org2.example.com", "users", "Admin@org2.example.com", "msp")
+		adminRunner2 = adminPeer2.JoinChannel(filepath.Join(testDir, "peer2", "testchannel.block"))
+		execute(adminRunner2)
+		Eventually(adminRunner2.Err(), 5*time.Second).Should(gbytes.Say("Successfully submitted proposal to join channel"))
 
 		By("installs chaincode for peer1")
-		cmd = exec.Command(components.Paths["peer"], "chaincode", "install", "-n", "mycc", "-v", "1.0", "--logging-level", "debug", "-p", "simple/cmd")
-		cmd.Env = append(
-			cmd.Env,
-			"PATH="+os.Getenv("PATH"),
-			"GOPATH="+filepath.Join(testdataDir, "chaincode"),
-			"FABRIC_CFG_PATH="+peer.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer.MSPConfigPath,
-			"CORE_PEER_ID="+peer.PeerID,
-			"CORE_PEER_ADDRESS="+peer.PeerListenAddress,
-		)
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(session, 30*time.Second).Should(gexec.Exit(0))
+		adminPeer = components.Peer()
+		adminPeer.ConfigDir = peer.ConfigDir
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminPeer.ExecPath = w.Deployment.Chaincode.ExecPath
+		adminPeer.GoPath = w.Deployment.Chaincode.GoPath
+		adminRunner = adminPeer.InstallChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Chaincode.Path)
+		execute(adminRunner)
+		Eventually(peerNodeRunner.Err(), 5*time.Second).Should(gbytes.Say(`\QInstalled Chaincode [mycc] Version [1.0] to peer\E`))
 
 		By("installs chaincode for peer2")
-		cmd = exec.Command(components.Paths["peer"], "chaincode", "install", "-n", "mycc", "-v", "1.0", "--logging-level", "debug", "-p", "simple/cmd")
-		cmd.Env = append(
-			cmd.Env,
-			"PATH="+os.Getenv("PATH"),
-			"GOPATH="+filepath.Join(testdataDir, "chaincode"),
-			"FABRIC_CFG_PATH="+peer2.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer2.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer2.MSPConfigPath,
-			"CORE_PEER_ID="+peer2.PeerID,
-			"CORE_PEER_ADDRESS="+peer2.PeerListenAddress,
-		)
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(session, 30*time.Second).Should(gexec.Exit(0))
+		adminPeer2 = components.Peer()
+		adminPeer2.ConfigDir = peer2.ConfigDir
+		adminPeer2.MSPConfigPath = filepath.Join(testDir, "peer2", "crypto", "peerOrganizations", "org2.example.com", "users", "Admin@org2.example.com", "msp")
+		adminPeer2.ExecPath = w.Deployment.Chaincode.ExecPath
+		adminPeer2.GoPath = w.Deployment.Chaincode.GoPath
+		adminRunner2 = adminPeer2.InstallChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Chaincode.Path)
+		execute(adminRunner2)
+		Eventually(peer2NodeRunner.Err(), 5*time.Second).Should(gbytes.Say(`\QInstalled Chaincode [mycc] Version [1.0] to peer\E`))
 
 		By("instantiate chaincode")
-		Consistently(peerProcess.Wait()).ShouldNot(Receive())
-		Consistently(peer2Process.Wait()).ShouldNot(Receive())
-		cmd = exec.Command(components.Paths["peer"], "chaincode", "instantiate", "-n", "mycc", "-v", "1.0", "-o", "127.0.0.1:7050", "-C", "testchannel", "-c", `{"Args":["init","a","100","b","200"]}`, "-P", `OR ('Org1MSP.peer','Org2MSP.peer')`, "--logging-level", "debug")
-		cmd.Env = append(
-			cmd.Env,
-			"PATH="+os.Getenv("PATH"),
-			"GOPATH="+filepath.Join(testdataDir, "chaincode"),
-			"FABRIC_CFG_PATH="+peer.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer.MSPConfigPath,
-			"CORE_PEER_ID="+peer.PeerID,
-			"CORE_PEER_ADDRESS="+peer.PeerListenAddress,
-		)
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(session, 2*time.Minute).Should(gexec.Exit(0))
-		Consistently(peerProcess.Wait()).ShouldNot(Receive())
-		Consistently(peer2Process.Wait()).ShouldNot(Receive())
+		adminPeer = components.Peer()
+		adminPeer.ConfigDir = peer.ConfigDir
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner = adminPeer.InstantiateChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Orderer, w.Deployment.Channel, w.Deployment.InitArgs, w.Deployment.Policy)
+		execute(adminRunner)
 
-		fmt.Printf("\n\n\n-----\n\n\n")
-		cmd = exec.Command(components.Paths["peer"], "chaincode", "list", "--installed", "-C", "testchannel")
-		cmd.Env = append(
-			cmd.Env,
-			"PATH="+os.Getenv("PATH"),
-			"GOPATH="+filepath.Join(testdataDir, "chaincode"),
-			"FABRIC_CFG_PATH="+peer.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer.MSPConfigPath,
-			"CORE_PEER_ID="+peer.PeerID,
-			"CORE_PEER_ADDRESS="+peer.PeerListenAddress,
-		)
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		fmt.Printf("\n\n\n-%s-\n\n", session.Out.Contents())
-		fmt.Printf("\n\n\n-%s-\n\n", session.Err.Contents())
-		Consistently(peerProcess.Wait()).ShouldNot(Receive())
-		Consistently(peer2Process.Wait()).ShouldNot(Receive())
+		By("Verify chaincode installed")
+		adminPeer = components.Peer()
+		adminPeer.ConfigDir = peer.ConfigDir
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner = adminPeer.ChaincodeListInstalled()
+		execute(adminRunner)
+		Eventually(adminRunner.Out()).Should(gbytes.Say("Path: simple/cmd"))
 
-		fmt.Printf("\n\n\n-----\n\n\n")
-		cmd = exec.Command(components.Paths["peer"], "chaincode", "list", "--instantiated", "-C", "testchannel")
-		cmd.Env = append(
-			cmd.Env,
-			"PATH="+os.Getenv("PATH"),
-			"GOPATH="+filepath.Join(testdataDir, "chaincode"),
-			"FABRIC_CFG_PATH="+peer.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer.MSPConfigPath,
-			"CORE_PEER_ID="+peer.PeerID,
-			"CORE_PEER_ADDRESS="+peer.PeerListenAddress,
-		)
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		Consistently(peerProcess.Wait(), time.Second).ShouldNot(Receive())
-		Consistently(peer2Process.Wait(), time.Second).ShouldNot(Receive())
+		By("Wait for chaincode to complete instantiation")
+		listInstantiated := func() bool {
+			adminPeer = components.Peer()
+			adminPeer.ConfigDir = peer.ConfigDir
+			adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+			adminRunner = adminPeer.ChaincodeListInstantiated(w.Deployment.Channel)
+			err := execute(adminRunner)
+			if err != nil {
+				return false
+			}
+			return strings.Contains(string(adminRunner.Out().Contents()), "Path: simple/cmd")
+		}
+		Eventually(listInstantiated, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 		By("query chaincode")
-		// peer chaincode query -C $CHANNEL_NAME -n mycc -c '{"Args":["query","a"]}'
-		cmd = exec.Command(components.Paths["peer"], "chaincode", "query", "-n", "mycc", "-v", "1.0", "-C", "testchannel", "-c", `{"Args":["query","a"]}`, "--logging-level", "debug")
-		cmd.Env = append(
-			cmd.Env,
-			"PATH="+os.Getenv("PATH"),
-			"GOPATH="+filepath.Join(testdataDir, "chaincode"),
-			"FABRIC_CFG_PATH="+peer.ConfigDir,
-			"CORE_PEER_LOCALMSPID="+peer.LocalMSPID,
-			"CORE_PEER_MSPCONFIGPATH="+peer.MSPConfigPath,
-			"CORE_PEER_ID="+peer.PeerID,
-			"CORE_PEER_ADDRESS="+peer.PeerListenAddress,
-		)
-		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		Eventually(session, 5*time.Second).Should(gexec.Exit(0))
+		adminPeer = components.Peer()
+		adminPeer.ConfigDir = peer.ConfigDir
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner = adminPeer.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
+		execute(adminRunner)
+		Eventually(adminRunner.Out()).Should(gbytes.Say("Query Result: 100"))
 
 		By("invoke chaincode")
-		//peer chaincode invoke -o orderer.example.com:7050 -C $CHANNEL_NAME -n mycc -c '{"Args":["invoke","a","b","10"]}'
-		//		cmd = exec.Command(components.Paths["peer"], "chaincode", "invoke", "-o", "127.0.0.1:7050", "-n", "mycc", "-C", "testchannel", "-c", `{"Args":["invoke","a","b","10"]}`)
-		//		cmd.Env = append(
-		//			cmd.Env,
-		//			"PATH="+os.Getenv("PATH"),
-		//			"GOPATH="+filepath.Join(testdataDir, "chaincode"),
-		//			"FABRIC_CFG_PATH="+peer.ConfigDir,
-		//			"CORE_PEER_LOCALMSPID="+peer.LocalMSPID,
-		//			"CORE_PEER_MSPCONFIGPATH="+peer.MSPConfigPath,
-		//			"CORE_PEER_ID="+peer.PeerID,
-		//			"CORE_PEER_ADDRESS="+peer.PeerListenAddress,
-		//		)
-		//		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		//		Expect(err).NotTo(HaveOccurred())
-		//		Eventually(session, 5*time.Second).Should(gexec.Exit(0))
+		adminPeer = components.Peer()
+		adminPeer.ConfigDir = peer.ConfigDir
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner = adminPeer.InvokeChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["invoke","a","b","10"]}`, w.Deployment.Orderer)
+		execute(adminRunner)
+		Eventually(adminRunner.Err()).Should(gbytes.Say("Chaincode invoke successful. result: status:200"))
+
+		By("query chaincode")
+		adminPeer = components.Peer()
+		adminPeer.ConfigDir = peer.ConfigDir
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner = adminPeer.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
+		execute(adminRunner)
+		Eventually(adminRunner.Out()).Should(gbytes.Say("Query Result: 90"))
 
 		By("update channel")
-		//peer channel update -o orderer.example.com:7050 -c $CHANNEL_NAME -f ./channel-artifacts/${CORE_PEER_LOCALMSPID}anchors.tx
-		//		cmd = exec.Command(components.Paths["peer"], "channel", "update", "-o", "127.0.0.1:7050", "-c", "testchannel", "-f", filepath.Join(testDir, "Org1MSPanchors.tx")
-		//		cmd.Env = append(
-		//			cmd.Env,
-		//			"PATH="+os.Getenv("PATH"),
-		//			"GOPATH="+filepath.Join(testdataDir, "chaincode"),
-		//			"FABRIC_CFG_PATH="+peer.ConfigDir,
-		//			"CORE_PEER_LOCALMSPID="+peer.LocalMSPID,
-		//			"CORE_PEER_MSPCONFIGPATH="+peer.MSPConfigPath,
-		//			"CORE_PEER_ID="+peer.PeerID,
-		//			"CORE_PEER_ADDRESS="+peer.PeerListenAddress,
-		//		)
-		//		session, err = gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-		//		Expect(err).NotTo(HaveOccurred())
-		//		Eventually(session, time.Minute).Should(gexec.Exit(0))
-
-		By("query chaincode")
-
-		By("invoke chaincode")
+		adminPeer = components.Peer()
+		adminPeer.ConfigDir = peer.ConfigDir
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner = adminPeer.UpdateChannel(filepath.Join(testDir, "Org1MSPanchors.tx"), w.Deployment.Channel, w.Deployment.Orderer)
+		execute(adminRunner)
+		Eventually(adminRunner.Err()).Should(gbytes.Say("Successfully submitted channel update"))
 	})
 })
 

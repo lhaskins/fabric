@@ -74,20 +74,6 @@ var _ = Describe("Peer", func() {
 
 		copyFile(filepath.Join("testdata", "core.yaml"), filepath.Join(tempDir, "core.yaml"))
 		peer.ConfigDir = tempDir
-		peer.LocalMSPID = "Org1ExampleCom"
-		peer.PeerID = "peer0.org1.example.com"
-		peer.MSPConfigPath = filepath.Join(cryptoDir, "peerOrganizations", "org1.example.com", "peers", peer.PeerID, "msp")
-		peer.PeerAddress = "127.0.0.1:7051"
-		peer.PeerListenAddress = "127.0.0.1:10051"
-		peer.LedgerStateStateDatabase = "LevelDB"
-		peer.ProfileEnabled = "true"
-		peer.ProfileListenAddress = "127.0.0.1:9060"
-		peer.FileSystemPath = tempDir
-		peer.PeerGossipExternalEndpoint = "127.0.0.1:7051"
-		peer.PeerChaincodeAddress = "127.0.0.1:7052"
-		peer.PeerEventsAddress = "127.0.0.1:10053"
-		peer.PeerChaincodeListenAddress = "127.0.0.1:7053"
-		peer.LogLevel = "DEBUG"
 	})
 
 	AfterEach(func() {
@@ -101,6 +87,7 @@ var _ = Describe("Peer", func() {
 	})
 
 	It("starts a peer", func() {
+		peer.MSPConfigPath = filepath.Join(cryptoDir, "peerOrganizations", "org1.example.com", "peers", "peer0.org1.example.com", "msp")
 		r := peer.NodeStart()
 		peerProcess = ifrit.Invoke(r)
 		Eventually(peerProcess.Ready()).Should(BeClosed())
@@ -109,13 +96,9 @@ var _ = Describe("Peer", func() {
 		By("Listing the installed chaincodes")
 		installed := components.Peer()
 		installed.ConfigDir = tempDir
-		installed.LocalMSPID = "Org1ExampleCom"
-		installed.PeerID = "peer0.org1.example.com"
 		installed.MSPConfigPath = filepath.Join(cryptoDir, "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		installed.PeerAddress = "127.0.0.1:10051"
-		installed.LogLevel = "DEBUG"
 
-		list := installed.ChaincodeList()
+		list := installed.ChaincodeListInstalled()
 		err := execute(list)
 		Expect(err).NotTo(HaveOccurred())
 

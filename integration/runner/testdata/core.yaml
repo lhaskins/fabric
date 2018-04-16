@@ -92,7 +92,7 @@ peer:
             file:
     authentication:
         timewindow: 15m
-    fileSystemPath: /var/hyperledger/production
+    fileSystemPath: filesystem
     BCCSP:
         Default: SW
         SW:
@@ -109,7 +109,6 @@ peer:
         enabled:     false
         listenAddress: 0.0.0.0:6060
     adminService:
-        #listenAddress: 0.0.0.0:7055
     handlers:
         authFilters:
           -
@@ -136,7 +135,6 @@ vm:
         hostConfig:
             NetworkMode: host
             Dns:
-               # - 192.168.0.1
             LogConfig:
                 Type: json-file
                 Config:

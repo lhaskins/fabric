@@ -26,6 +26,7 @@ func TestRunner(t *testing.T) {
 
 var (
 	components *world.Components
+	inputs     *world.World
 )
 
 var _ = SynchronizedBeforeSuite(func() []byte {

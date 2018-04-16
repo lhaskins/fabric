@@ -11,10 +11,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/hyperledger/fabric/integration/runner"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 
-	"github.com/hyperledger/fabric/integration/runner"
 	"github.com/tedsuo/ifrit"
 )
 
@@ -35,6 +35,9 @@ var _ = Describe("CryptoGen", func() {
 	})
 
 	AfterEach(func() {
+		//		output, err := exec.Command("find", tempDir, "-type", "f").Output()
+		//		Expect(err).NotTo(HaveOccurred())
+		//		fmt.Printf("\n---\n%s\n---\n", output)
 		os.RemoveAll(tempDir)
 	})
 
@@ -58,4 +61,5 @@ var _ = Describe("CryptoGen", func() {
 			})
 		})
 	})
+
 })

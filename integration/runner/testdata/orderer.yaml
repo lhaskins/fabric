@@ -21,11 +21,12 @@ General:
     ServerTimeout: 20s
   LogLevel: info
   LogFormat: '%{color}%{time:2006-01-02 15:04:05.000 MST} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}'
-  GenesisMethod: provisional
-  GenesisProfile: SampleInsecureSolo
-  GenesisFile: genesisblock
-  LocalMSPDir: msp
-  LocalMSPID: DEFAULT
+  GenesisMethod: file
+  GenesisProfile: TwoOrgsOrdererGenesis
+  SystemChannel: mychannel
+  GenesisFile: mychannel.block
+  LocalMSPDir: crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp
+  LocalMSPID: OrdererMSP
   Profile:
     Enabled: false
     Address: 0.0.0.0:6060

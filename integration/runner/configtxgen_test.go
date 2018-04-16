@@ -37,6 +37,8 @@ var _ = Describe("ConfigTxGen", func() {
 
 		generate := cryptogen.Generate()
 		Expect(execute(generate)).To(Succeed())
+		Expect(filepath.Join(tempDir, "crypto-config", "peerOrganizations")).To(BeADirectory())
+		Expect(filepath.Join(tempDir, "crypto-config", "ordererOrganizations")).To(BeADirectory())
 
 		copyFile(filepath.Join("testdata", "configtx.yaml"), filepath.Join(tempDir, "configtx.yaml"))
 	})
@@ -151,7 +153,7 @@ var _ = Describe("ConfigTxGen", func() {
 				Path:      components.Paths["configtxgen"],
 				ChannelID: "mychannel",
 				Profile:   "TwoOrgsChannel",
-				AsOrg:     "Org1MSP",
+				AsOrg:     "Org1",
 				ConfigDir: tempDir,
 				Output:    filepath.Join(tempDir, "Org1MSPanchors.tx"),
 			}

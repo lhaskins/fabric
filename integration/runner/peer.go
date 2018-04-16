@@ -14,26 +14,11 @@ import (
 )
 
 type Peer struct {
-	Path                        string
-	ConfigDir                   string
-	LocalMSPID                  string
-	MSPConfigPath               string
-	PeerID                      string
-	PeerAddress                 string
-	PeerListenAddress           string
-	LedgerStateStateDatabase    string
-	ProfileEnabled              string
-	ProfileListenAddress        string
-	FileSystemPath              string
-	PeerEventsAddress           string
-	PeerChaincodeAddress        string
-	PeerChaincodeListenAddress  string
-	PeerGossipEndpoint          string
-	PeerGossipExternalEndpoint  string
-	PeerGossipBootstrap         string
-	PeerGossipUseLeaderElection string
-	PeerGossipOrgLeader         string
-	LogLevel                    string
+	Path          string
+	GoPath        string
+	ExecPath      string
+	ConfigDir     string
+	MSPConfigPath string
 }
 
 func (p *Peer) setupEnvironment(cmd *exec.Cmd) {
@@ -46,50 +31,11 @@ func (p *Peer) setupEnvironment(cmd *exec.Cmd) {
 	if p.MSPConfigPath != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_MSPCONFIGPATH=%s", p.MSPConfigPath))
 	}
-	if p.PeerID != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_ID=%s", p.PeerID))
+	if p.GoPath != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("GOPATH=%s", p.GoPath))
 	}
-	if p.PeerAddress != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_ADDRESS=%s", p.PeerAddress))
-	}
-	if p.PeerListenAddress != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_LISTENADDRESS=%s", p.PeerListenAddress))
-	}
-	if p.LedgerStateStateDatabase != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_LEDGER_STATE_STATEDATABASE=%s", p.LedgerStateStateDatabase))
-	}
-	if p.ProfileEnabled != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_PROFILE_ENABLED=%s", p.ProfileEnabled))
-	}
-	if p.ProfileListenAddress != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_PROFILE_LISTENADDRESS=%s", p.ProfileListenAddress))
-	}
-	if p.FileSystemPath != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_FILESYSTEMPATH=%s", p.FileSystemPath))
-	}
-	if p.PeerEventsAddress != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_EVENTS_ADDRESS=%s", p.PeerEventsAddress))
-	}
-	if p.PeerChaincodeAddress != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_CHAINCODEADDRESS=%s", p.PeerChaincodeAddress))
-	}
-	if p.PeerChaincodeListenAddress != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_CHAINCODELISTENADDRESS=%s", p.PeerChaincodeListenAddress))
-	}
-	if p.PeerGossipEndpoint != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_GOSSIP_ENDPOINT=%s", p.PeerGossipEndpoint))
-	}
-	if p.PeerGossipExternalEndpoint != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_GOSSIP_EXTERNALENDPOINT=%s", p.PeerGossipExternalEndpoint))
-	}
-	if p.PeerGossipBootstrap != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_GOSSIP_BOOTSTRAP=%s", p.PeerGossipBootstrap))
-	}
-	if p.PeerGossipOrgLeader != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_GOSSIP_ORGLEADER=%s", p.PeerGossipOrgLeader))
-	}
-	if p.PeerGossipUseLeaderElection != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_GOSSIP_USELEADERELECTION=%s", p.PeerGossipUseLeaderElection))
+	if p.ExecPath != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("PATH=%s", p.ExecPath))
 	}
 }
 
@@ -108,6 +54,116 @@ func (p *Peer) NodeStart() *ginkgomon.Runner {
 
 func (p *Peer) ChaincodeList() *ginkgomon.Runner {
 	cmd := exec.Command(p.Path, "chaincode", "list", "--installed")
+	p.setupEnvironment(cmd)
+
+	r := ginkgomon.New(ginkgomon.Config{
+		AnsiColorCode: "92m",
+		Command:       cmd,
+	})
+
+	return r
+}
+
+func (p *Peer) ChaincodeListInstantiated(channel string) *ginkgomon.Runner {
+	cmd := exec.Command(p.Path, "chaincode", "list", "--instantiated", "-C", channel)
+	p.setupEnvironment(cmd)
+
+	r := ginkgomon.New(ginkgomon.Config{
+		AnsiColorCode: "92m",
+		Command:       cmd,
+	})
+
+	return r
+}
+
+func (p *Peer) CreateChannel(channel string, filename string) *ginkgomon.Runner {
+	cmd := exec.Command(p.Path, "channel", "create", "-c", channel, "-o", "127.0.0.1:7050", "-f", filename)
+	p.setupEnvironment(cmd)
+
+	r := ginkgomon.New(ginkgomon.Config{
+		AnsiColorCode: "92m",
+		Command:       cmd,
+	})
+
+	return r
+}
+
+func (p *Peer) FetchChannel(channel string, filename string, block string) *ginkgomon.Runner {
+	cmd := exec.Command(p.Path, "channel", "fetch", block, "-c", channel, "-o", "127.0.0.1:7050", filename)
+	p.setupEnvironment(cmd)
+
+	r := ginkgomon.New(ginkgomon.Config{
+		AnsiColorCode: "92m",
+		Command:       cmd,
+	})
+
+	return r
+}
+
+func (p *Peer) JoinChannel(transactionFile string) *ginkgomon.Runner {
+	cmd := exec.Command(p.Path, "channel", "join", "-b", transactionFile)
+	p.setupEnvironment(cmd)
+
+	r := ginkgomon.New(ginkgomon.Config{
+		AnsiColorCode: "92m",
+		Command:       cmd,
+	})
+
+	return r
+}
+
+func (p *Peer) UpdateChannel(transactionFile string, channel string, orderer string) *ginkgomon.Runner {
+	cmd := exec.Command(p.Path, "channel", "update", "-c", channel, "-o", orderer, "-f", transactionFile)
+	p.setupEnvironment(cmd)
+
+	r := ginkgomon.New(ginkgomon.Config{
+		AnsiColorCode: "92m",
+		Command:       cmd,
+	})
+
+	return r
+}
+
+func (p *Peer) InstallChaincode(name string, version string, path string) *ginkgomon.Runner {
+	//func (p *Peer) InstallChaincode(w world.World) *ginkgomon.Runner {
+	//cmd := exec.Command(p.Path, "chaincode", "install", "-n", w.Deployment.Chaincode.Name, "-v", w.Deployment.Chaincode.Version, "-p", w.Deployment.Chaincode.Path)
+	cmd := exec.Command(p.Path, "chaincode", "install", "-n", name, "-v", version, "-p", path)
+	p.setupEnvironment(cmd)
+
+	r := ginkgomon.New(ginkgomon.Config{
+		AnsiColorCode: "92m",
+		Command:       cmd,
+	})
+
+	return r
+}
+
+func (p *Peer) InstantiateChaincode(name string, version string, orderer string, channel string, args string, policy string) *ginkgomon.Runner {
+	cmd := exec.Command(p.Path, "chaincode", "instantiate", "-n", name, "-v", version, "-o", orderer, "-C", channel, "-c", args, "-P", policy)
+	p.setupEnvironment(cmd)
+
+	r := ginkgomon.New(ginkgomon.Config{
+		AnsiColorCode: "92m",
+		Command:       cmd,
+	})
+
+	return r
+}
+
+func (p *Peer) QueryChaincode(name string, channel string, args string) *ginkgomon.Runner {
+	cmd := exec.Command(p.Path, "chaincode", "query", "-n", name, "-C", channel, "-c", args)
+	p.setupEnvironment(cmd)
+
+	r := ginkgomon.New(ginkgomon.Config{
+		AnsiColorCode: "92m",
+		Command:       cmd,
+	})
+
+	return r
+}
+
+func (p *Peer) InvokeChaincode(name string, channel string, args string, orderer string) *ginkgomon.Runner {
+	cmd := exec.Command(p.Path, "chaincode", "invoke", "-n", name, "-C", channel, "-c", args, "-o", orderer)
 	p.setupEnvironment(cmd)
 
 	r := ginkgomon.New(ginkgomon.Config{

@@ -1,19 +1,17 @@
-# Copyright IBM Corp. All Rights Reserved.
-#
-# SPDX-License-Identifier: Apache-2.0
-#
 
 OrdererOrgs:
-  - Name: Orderer
+  - Name: ExampleCom
     Domain: example.com
     CA:
         Country: US
         Province: California
         Locality: San Francisco
-    Specs:
-      - Hostname: orderer
-PeerOrgs:
-  - Name: Org1
+    Specs: 
+      - Hostname: orderer0
+
+
+PeerOrgs: 
+  - Name: Org1ExampleCom
     Domain: org1.example.com
     EnableNodeOUs: true
     CA:
@@ -23,8 +21,9 @@ PeerOrgs:
     Template:
       Count: 2
     Users:
-      Count: 1
-  - Name: Org2
+      Count: 2
+
+  - Name: Org2ExampleCom
     Domain: org2.example.com
     EnableNodeOUs: true
     CA:
@@ -34,5 +33,4 @@ PeerOrgs:
     Template:
       Count: 2
     Users:
-      Count: 1
-
+      Count: 2
