@@ -101,7 +101,7 @@ peer:
             FileKeyStore:
                 KeyStore:
     mspConfigPath: msp
-    localMspId: SampleOrg
+    localMspId: Org1MSP
     deliveryclient:
         reconnectTotalTimeThreshold: 3600s
     localMspType: bccsp

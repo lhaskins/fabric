@@ -3,6 +3,8 @@ package world_test
 import (
 	"io/ioutil"
 	"os"
+//	"os/exec"
+//	"fmt"
 	"path/filepath"
 	"time"
 
@@ -23,9 +25,9 @@ var _ = Describe("Config", func() {
 	})
 
 	AfterEach(func() {
-		//		output, err := exec.Command("find", tempDir, "-type", "f").Output()
-		//		Expect(err).NotTo(HaveOccurred())
-		//		fmt.Printf("\n---\n%s\n---\n", output)
+//		output, err := exec.Command("find", tempDir, "-type", "f").Output()
+//		Expect(err).NotTo(HaveOccurred())
+//		fmt.Printf("\n---\n%s\n---\n", output)
 		os.RemoveAll(tempDir)
 	})
 
@@ -81,6 +83,9 @@ var _ = Describe("Config", func() {
 					Orderers: []OrdererConfig{{
 						Name:        "orderer0",
 						BrokerCount: 0,
+					},{
+						Name:        "orderer1",
+						BrokerCount: 0,
 					}},
 				},
 				PeerOrgs: Organization{
@@ -124,6 +129,9 @@ var _ = Describe("Config", func() {
 								MaxMessageCount:   1,
 								AbsoluteMaxBytes:  (uint32)(98 * 1024 * 1024),
 								PreferredMaxBytes: (uint32)(512 * 1024),
+							},
+							Kafka: localconfig.Kafka{
+								Brokers: []string{},
 							},
 							Organizations: oOrgProfiles,
 							OrdererType:   "solo",

@@ -11,11 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/hyperledger/fabric/integration/runner"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/tedsuo/ifrit/ginkgomon"
 	"github.com/tedsuo/ifrit"
+	"github.com/onsi/gomega/gbytes"
 )
 
 var _ = Describe("Peer", func() {
@@ -26,8 +29,8 @@ var _ = Describe("Peer", func() {
 		orderer        *runner.Orderer
 		ordererProcess ifrit.Process
 		peerProcess    ifrit.Process
-
-		peer *runner.Peer
+		peer           *runner.Peer
+		ordererRunner  *ginkgomon.Runner
 	)
 
 	BeforeEach(func() {
@@ -35,6 +38,7 @@ var _ = Describe("Peer", func() {
 		tempDir, err = ioutil.TempDir("", "peer")
 		Expect(err).NotTo(HaveOccurred())
 
+		// Generate crypto info
 		cryptoDir = filepath.Join(tempDir, "crypto-config")
 		peer = components.Peer()
 
@@ -46,29 +50,40 @@ var _ = Describe("Peer", func() {
 		crypto := cryptogen.Generate()
 		Expect(execute(crypto)).To(Succeed())
 
+		// Generate orderer config block
 		copyFile(filepath.Join("testdata", "configtx.yaml"), filepath.Join(tempDir, "configtx.yaml"))
 		configtxgen := components.ConfigTxGen()
 		configtxgen.ChannelID = "mychannel"
 		configtxgen.Profile = "TwoOrgsOrdererGenesis"
 		configtxgen.ConfigDir = tempDir
 		configtxgen.Output = filepath.Join(tempDir, "mychannel.block")
-
 		r := configtxgen.OutputBlock()
 		err = execute(r)
 		Expect(err).NotTo(HaveOccurred())
 
+		// Generate channel transaction file
+		configtxgen = components.ConfigTxGen()
+		configtxgen.ChannelID = "mychan"
+		configtxgen.Profile = "TwoOrgsChannel"
+		configtxgen.ConfigDir = tempDir
+		configtxgen.Output = filepath.Join(tempDir, "mychan.tx")
+		r = configtxgen.OutputCreateChannelTx()
+		err = execute(r)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Start the orderer
 		copyFile(filepath.Join("testdata", "orderer.yaml"), filepath.Join(tempDir, "orderer.yaml"))
 		orderer = components.Orderer()
 		orderer.ConfigDir = tempDir
-		orderer.OrdererType = "solo"
+//		orderer.OrdererType = "solo"
 		orderer.LedgerLocation = tempDir
-		orderer.GenesisProfile = "TwoOrgsOrdererGenesis"
-		orderer.LocalMSPId = "OrdererMSP"
-		orderer.LocalMSPDir = filepath.Join(cryptoDir, "ordererOrganizations/example.com/orderers/orderer.example.com/msp")
+//		orderer.GenesisProfile = "TwoOrgsOrdererGenesis"
+//		orderer.LocalMSPId = "OrdererMSP"
+//		orderer.LocalMSPDir = filepath.Join(cryptoDir, "ordererOrganizations/example.com/orderers/orderer.example.com/msp")
 		orderer.LogLevel = "DEBUG"
 
-		o := orderer.New()
-		ordererProcess = ifrit.Invoke(o)
+		ordererRunner = orderer.New()
+		ordererProcess = ifrit.Invoke(ordererRunner)
 		Eventually(ordererProcess.Ready()).Should(BeClosed())
 		Consistently(ordererProcess.Wait()).ShouldNot(Receive())
 
@@ -102,21 +117,27 @@ var _ = Describe("Peer", func() {
 		err := execute(list)
 		Expect(err).NotTo(HaveOccurred())
 
-		peerProcess.Signal(syscall.SIGTERM)
-		Eventually(peerProcess.Wait()).Should(Receive(BeNil()))
+		By("create channel")
+		createChan := components.Peer()
+		createChan.ConfigDir = tempDir
+		createChan.MSPConfigPath = filepath.Join(cryptoDir, "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		cRunner := createChan.CreateChannel("mychan", filepath.Join(tempDir, "mychan.tx"))
+		err = execute(cRunner)
+		Expect(err).NotTo(HaveOccurred())
+		Eventually(ordererRunner.Err(), 5*time.Second).Should(gbytes.Say("Created and starting new chain mychan"))
 
-		//		By("create channel")
 		//
 		//		By("join channel")
 		//
 		//		By("installs chaincode")
-		//		installChaincode := components.Peer()
-		//		installChaincode.LocalMSPID = "Org1ExampleCom"
-		//		install = installChaincode.InstallChaincode()
 		//
 		//		By("instantiate channel")
 		//
 		//		By("query channel")
+
+		peerProcess.Signal(syscall.SIGTERM)
+		Eventually(peerProcess.Wait()).Should(Receive(BeNil()))
+
 	})
 
 })

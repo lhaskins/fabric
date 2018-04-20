@@ -74,8 +74,7 @@ OrdererOrgs:
         Province: California
         Locality: San Francisco
     Specs: {{range .Orderers}}
-      - Hostname: {{.Name}}
-{{end}}
+      - Hostname: {{.Name}}{{end}}
 `
 
 	var peerCrypto = `

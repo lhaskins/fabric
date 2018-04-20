@@ -8,7 +8,7 @@ OrdererOrgs:
         Locality: San Francisco
     Specs: 
       - Hostname: orderer0
-
+      - Hostname: orderer1
 
 PeerOrgs: 
   - Name: Org1ExampleCom

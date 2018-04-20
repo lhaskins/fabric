@@ -188,7 +188,6 @@ var _ = Describe("EndToEnd", func() {
 
 		By("building the channel transaction file")
 		configtxgen.Profile = "TwoOrgsChannel"
-		//configtxgen.ChannelID = "testchannel"
 		configtxgen.ChannelID = w.Deployment.Channel
 		configtxgen.Output = filepath.Join(testDir, "testchannel.tx")
 		r = configtxgen.OutputCreateChannelTx()
@@ -342,7 +341,9 @@ var _ = Describe("EndToEnd", func() {
 		adminPeer.ConfigDir = peer.ConfigDir
 		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
 		adminRunner = adminPeer.InstantiateChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Orderer, w.Deployment.Channel, w.Deployment.InitArgs, w.Deployment.Policy)
-		execute(adminRunner)
+		adminProcess := ifrit.Invoke(adminRunner)
+		Eventually(adminProcess.Ready(), 2*time.Second).Should(BeClosed())
+		Eventually(adminProcess.Wait(), 5*time.Second).ShouldNot(Receive(BeNil()))
 
 		By("Verify chaincode installed")
 		adminPeer = components.Peer()
@@ -364,7 +365,7 @@ var _ = Describe("EndToEnd", func() {
 			}
 			return strings.Contains(string(adminRunner.Out().Contents()), "Path: simple/cmd")
 		}
-		Eventually(listInstantiated, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+		Eventually(listInstantiated, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 		By("query chaincode")
 		adminPeer = components.Peer()

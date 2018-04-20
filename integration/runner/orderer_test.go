@@ -52,11 +52,11 @@ var _ = Describe("Orderer", func() {
 		copyFile(filepath.Join("testdata", "orderer.yaml"), filepath.Join(tempDir, "orderer.yaml"))
 		orderer = components.Orderer()
 		orderer.ConfigDir = tempDir
-		orderer.OrdererType = "solo"
+//		orderer.OrdererType = "solo"
 		orderer.LedgerLocation = tempDir
-		orderer.GenesisProfile = "TwoOrgsOrdererGenesis"
-		orderer.LocalMSPId = "OrdererMSP"
-		orderer.LocalMSPDir = filepath.Join(tempDir, "crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp")
+//		orderer.GenesisProfile = "TwoOrgsOrdererGenesis"
+//		orderer.LocalMSPId = "OrdererMSP"
+//		orderer.LocalMSPDir = filepath.Join(tempDir, "crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/msp")
 		orderer.LogLevel = "debug"
 	})
 
