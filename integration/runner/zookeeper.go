@@ -1,0 +1,229 @@
+/*
+Copyright IBM Corp. All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+*/
+
+package runner
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"sync"
+	"time"
+
+	docker "github.com/fsouza/go-dockerclient"
+	"github.com/pkg/errors"
+	"github.com/tedsuo/ifrit"
+)
+
+const ZookeeperDefaultImage = "hyperledger/fabric-zookeeper:latest"
+
+var ZookeeperDefaultNamer NameFunc = UniqueName
+
+type Zookeeper struct {
+	Client         *docker.Client
+	Image          string
+	HostIP         string
+	HostPort       []int
+	ContainerPorts []docker.Port
+	Name           string
+	StartTimeout   time.Duration
+
+	ZooMyID    int
+	ZooServers string
+
+	ErrorStream  io.Writer
+	OutputStream io.Writer
+
+	containerID      string
+	hostAddress      string
+	containerAddress string
+	address          string
+
+	mutex   sync.Mutex
+	stopped bool
+}
+
+func (z *Zookeeper) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
+	if z.Image == "" {
+		z.Image = ZookeeperDefaultImage
+	}
+
+	if z.Name == "" {
+		z.Name = ZookeeperDefaultNamer()
+	}
+
+	if z.HostIP == "" {
+		z.HostIP = "127.0.0.1"
+	}
+
+	if z.ContainerPorts == nil {
+		z.ContainerPorts = []docker.Port{
+			docker.Port("2181/tcp"),
+			docker.Port("2888/tcp"),
+			docker.Port("3888/tcp")}
+	}
+
+	if z.StartTimeout == 0 {
+		z.StartTimeout = DefaultStartTimeout
+	}
+
+	if z.ZooMyID == 0 {
+		z.ZooMyID = 1
+	}
+
+	if z.Client == nil {
+		client, err := docker.NewClientFromEnv()
+		if err != nil {
+			return err
+		}
+		z.Client = client
+	}
+
+	config := &docker.Config{
+				Image: z.Image,
+				Env: []string{
+					fmt.Sprintf("ZOO_MY_ID=%d", z.ZooMyID),
+					fmt.Sprintf("ZOO_SERVERS=%s", z.ZooServers),
+				},
+			}
+
+	container, err := z.Client.CreateContainer(
+		docker.CreateContainerOptions{
+			Name:       z.Name,
+			Config:     config,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	z.containerID = container.ID
+
+	err = z.Client.StartContainer(container.ID, nil)
+	if err != nil {
+		return err
+	}
+	defer z.Stop()
+
+	container, err = z.Client.InspectContainer(container.ID)
+	if err != nil {
+		return err
+	}
+
+	z.containerAddress = net.JoinHostPort(
+		container.NetworkSettings.IPAddress,
+		z.ContainerPorts[0].Port(),
+	)
+
+	err = z.streamLogs()
+	if err != nil {
+		return err
+	}
+
+	containerExit := z.wait()
+	ctx, cancel := context.WithTimeout(context.Background(), z.StartTimeout)
+	defer cancel()
+
+	select {
+	case <-ctx.Done():
+		return errors.Wrapf(ctx.Err(), "zookeeper in container %s did not start", z.containerID)
+	case <-containerExit:
+		return errors.New("container exited before ready")
+	default:
+		z.address = z.containerAddress
+	}
+
+	close(ready)
+
+	select {
+	case err := <-containerExit:
+		return err
+	case <-sigCh:
+		return z.Stop()
+	}
+}
+
+func (z *Zookeeper) wait() <-chan error {
+	exitCh := make(chan error)
+	go func() {
+		if _, err := z.Client.WaitContainer(z.containerID); err != nil {
+			exitCh <- err
+		}
+	}()
+
+	return exitCh
+}
+
+func (z *Zookeeper) streamLogs() error {
+	if z.ErrorStream == nil && z.OutputStream == nil {
+		return nil
+	}
+
+	logOptions := docker.LogsOptions{
+		Container:    z.containerID,
+		ErrorStream:  z.ErrorStream,
+		OutputStream: z.OutputStream,
+		Stderr:       z.ErrorStream != nil,
+		Stdout:       z.OutputStream != nil,
+	}
+
+	return z.Client.Logs(logOptions)
+}
+
+func (z *Zookeeper) ContainerID() string {
+	return z.containerID
+}
+
+func (z *Zookeeper) ContainerAddress() string {
+	return z.containerAddress
+}
+
+func (z *Zookeeper) Start() error {
+	p := ifrit.Invoke(z)
+
+	select {
+	case <-p.Ready():
+		return nil
+	case err := <-p.Wait():
+		return err
+	}
+}
+
+func (z *Zookeeper) Stop() error {
+	z.mutex.Lock()
+	if z.stopped {
+		z.mutex.Unlock()
+		return errors.Errorf("container %s already stopped", z.Name)
+	}
+	z.stopped = true
+	z.mutex.Unlock()
+
+	err := z.Client.StopContainer(z.containerID, 0)
+	if err != nil {
+		return err
+	}
+
+//	ctx, err := z.Client.ListVolumes(docker.ListVolumesOptions{})
+//	if err != nil {
+//		return err
+//	}
+//
+//	ctx, err = z.Client.PruneVolumes(PruneVolumesOptions{})
+//	err = z.Client.PruneVolumes(
+//		docker.PruneVolumesOptions{
+//			Filters: map[string][]string{},
+//			Context: ctx,
+//		},
+//	)
+
+	return z.Client.RemoveContainer(
+		docker.RemoveContainerOptions{
+			ID:    z.containerID,
+			Force: true,
+		},
+	)
+}

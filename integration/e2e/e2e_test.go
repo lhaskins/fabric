@@ -210,6 +210,12 @@ var _ = Describe("EndToEnd", func() {
 		execute(r)
 		Expect(filepath.Join(testDir, "Org2MSPanchors.tx")).To(BeARegularFile())
 
+		By("starting a zookeeper")
+		zookeeper := components.Zookeeper(0)
+		err := zookeeper.Start()
+		Expect(err).NotTo(HaveOccurred())
+		defer zookeeper.Stop()
+
 		By("starting a solo orderer")
 		orderer := components.Orderer()
 		copyFile(filepath.Join(testdataDir, "core.yaml"), filepath.Join(testDir, "core.yaml"))

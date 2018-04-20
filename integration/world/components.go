@@ -7,6 +7,7 @@ SPDX-License-Identifier: Apache-2.0
 package world
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/hyperledger/fabric/integration/runner"
@@ -55,6 +56,13 @@ func (c *Components) Cryptogen() *runner.Cryptogen {
 func (c *Components) ConfigTxGen() *runner.ConfigTxGen {
 	return &runner.ConfigTxGen{
 		Path: c.Paths["configtxgen"],
+	}
+}
+
+func (c *Components) Zookeeper(id int) *runner.Zookeeper {
+	return &runner.Zookeeper{
+		ZooMyID: id,
+		Name: fmt.Sprintf("zookeeper%d", id),
 	}
 }
 
