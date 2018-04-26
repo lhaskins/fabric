@@ -8,41 +8,41 @@ package runner
 
 import (
 	"context"
-	"encoding/base32"
+//	"encoding/base32"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
+//	"strings"
 	"sync"
 	"time"
 
 	docker "github.com/fsouza/go-dockerclient"
-	"github.com/hyperledger/fabric/common/util"
+//	"github.com/hyperledger/fabric/common/util"
 	"github.com/pkg/errors"
 	"github.com/tedsuo/ifrit"
 )
 
-const (
-	DefaultImage        = "hyperledger/fabric-couchdb:latest"
-	DefaultStartTimeout = 30 * time.Second
-)
+//const (
+//	DefaultImage        = "hyperledger/fabric-couchdb:latest"
+//	DefaultStartTimeout = 30 * time.Second
+//)
 
 // A NameFunc is used to generate container names.
-type NameFunc func() string
+//type NameFunc func() string
 
 // DefaultNamer is the default naming function.
-var DefaultNamer NameFunc = UniqueName
+//var DefaultNamer NameFunc = UniqueName
 
 // UniqueName is a NamerFunc that generates base-32 enocded UUIDs for container
 // names.
-func UniqueName() string {
-	uuid := util.GenerateBytesUUID()
-	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(uuid)
-	return strings.ToLower(encoded)
-}
+//func UniqueName() string {
+//	uuid := util.GenerateBytesUUID()
+//	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(uuid)
+//	return strings.ToLower(encoded)
+//}
 const DefaultCouchDBImage = "hyperledger/fabric-couchdb:latest"
 
 // CouchDB manages the execution of an instance of a dockerized CounchDB

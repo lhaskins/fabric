@@ -177,40 +177,54 @@ func (w *World) BootstrapNetwork(rootpath string) (err error) {
 	return err
 }
 
-func (w *World) BuildNetwork() (err error){
+func (w *World) BuildNetwork(rootpath string) (err error){
 	var (
-		z *runner.Zookeeper
-		k []*runner.Kafka
-		o *runner.Orderer
-		p *runner.Peer
+		z       *runner.Zookeeper
+		k       *runner.Kafka
+		kafkas []*runner.Kafka
+//		o *runner.Orderer
+//		p *runner.Peer
 
 		zookeepers []string
 		zooservers []string
-
-		err error
 	)
 
-	if w.OrdererOrgs.Orderers.BrokerCount !=  0 {
-		for id := 0; id <= w.OrdererOrgs.Orderers.ZookeeperCount; id++ {
-			z = w.Components.Zookeeper(id)
-			z.Name = fmt.Sprintf("zookeeper%d", id)
-			z.ZooMyID = id
-			z.NetworkID = w.Network.ID
-			z.NetworkName = w.Network.Name
-			err = z.Start()
-			zookeepers.append(fmt.Sprintf("zookeeper%d:2181", id))
-			zooservers.append(fmt.Sprintf("server.%d=zookeeper%d:2888:3888", id, id))
+	o = w.Components.Orderer()
+	for orderer := range(w.OrdererOrgs.Orderers) {
+		o.OrdererType = "solo"
+		if w.OrdererOrgs.Orderers[orderer].BrokerCount !=  0 {
+			o.OrdererType = "kafka"
+			for id := 1; id <= w.OrdererOrgs.Orderers[orderer].ZookeeperCount; id++ {
+				z = w.Components.Zookeeper(id, w.Network)
+				err = z.Start()
+				zookeepers = append(zookeepers, fmt.Sprintf("zookeeper%d:2181 ", id))
+				zooservers = append(zooservers, fmt.Sprintf("server.%d=zookeeper%d:2888:3888 ", id, id))
+			}
+			fmt.Println("Zookeeper string:", zookeepers)
+			fmt.Println("Zooservers string:", zooservers)
+			for id := 1; id <= w.OrdererOrgs.Orderers[orderer].BrokerCount; id++ {
+				k = w.Components.Kafka(id, w.Network)
+				k.KafkaMinInsyncReplicas = w.OrdererOrgs.Orderers[orderer].KafkaMinInsyncReplicas
+				k.KafkaDefaultReplicationFactor = w.OrdererOrgs.Orderers[orderer].KafkaDefaultReplicationFactor
+				k.KafkaZookeeperConnect = strings.Join(zookeepers, " ")
+				err = k.Start()
+				kafkas = append(kafkas, k)
+			}
+			fmt.Println("kafkas string:", kafkas)
 		}
-		for id = 0; id <= w.OrdererOrgs.Orderers[0].BrokerCount; id++ {
-			k = w.Components.Kafka()
-			k.Name = fmt.Sprintf("kafka%d", id)
-			k.KafkaBrokerID = id
-			k.KafkaMinInsyncReplicas = w.OrdererOrgs.Orderers[0].KafkaMinInsyncReplicas
-			k.KafkaDefaultReplicationFactor = w.OrdererOrgs.Orderers[0].KafkaDefaultReplicationFactor
-			k.KafkaZookeeperConnect = strings.Join(zookeepers, " ")
-			k.NetworkID = w.Network.ID
-			k.NetworkName = w.Network.Name
-			err = k.Start()
-		}
+
+		o.ConfigDir = rootPath
+		o.OrdererHome = rootpath
+		o.ListenAddress = "0.0.0.0"
+		o.ListenPort = "7050"
+		o.LedgerLocation = rootPath
+		o.GenesisProfile = w.OrdererOrgs.Profile
+		o.GenesisMethod = "file"
+		o.GenesisFile = filepath.Join(rootPath, fmt.Sprintf("%s.block", w.Deployment.SystemChannel))
+		o.LocalMSPId = w.OrdererOrgs.Domain
+//		o.LocalMSPDir = filepath.Join(rootPath, "crypto", "ordererOrganizations", "example.com", "orderers", "orderer.example.com", "msp")
+		o.LocalMSPDir = w.Profiles[w.OrdererOrgs.Profile].MSPDir
+		o.LogLevel = "debug"
 	}
+	return err
 }

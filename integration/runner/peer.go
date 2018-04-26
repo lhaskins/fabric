@@ -25,9 +25,6 @@ func (p *Peer) setupEnvironment(cmd *exec.Cmd) {
 	if p.ConfigDir != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("FABRIC_CFG_PATH=%s", p.ConfigDir))
 	}
-	if p.LocalMSPID != "" {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_LOCALMSPID=%s", p.LocalMSPID))
-	}
 	if p.MSPConfigPath != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_PEER_MSPCONFIGPATH=%s", p.MSPConfigPath))
 	}

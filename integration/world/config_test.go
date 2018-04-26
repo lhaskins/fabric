@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"fmt"
 
 	"github.com/hyperledger/fabric/common/tools/configtxgen/localconfig"
 	"github.com/hyperledger/fabric/integration/runner"
@@ -12,6 +13,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	docker "github.com/fsouza/go-dockerclient"
 )
 
 var _ = Describe("Config", func() {
@@ -49,7 +51,7 @@ var _ = Describe("Config", func() {
 			Profile: "TwoOrgsOrdererGenesis",
 			Orderers: []OrdererConfig{{
 				Name:        "orderer0",
-				BrokerCount: 0,
+				BrokerCount: 4,
 				ZookeeperCount: 1,
 				KafkaMinInsyncReplicas: 2,
 				KafkaDefaultReplicationFactor: 3,
@@ -84,8 +86,8 @@ var _ = Describe("Config", func() {
 			Output: filepath.Join(tempDir, "crypto"),
 		}
 
-		client, err = docker.NewClientFromEnv()
-		network, err = client.CreateNetwork(
+		client, err := docker.NewClientFromEnv()
+		network, err := client.CreateNetwork(
 			docker.CreateNetworkOptions{
 				Name:   "mytestnet",
 				Driver: "bridge",
@@ -200,8 +202,11 @@ var _ = Describe("Config", func() {
 		Expect(filepath.Join(tempDir, "Org1ExampleCom_anchors.tx")).To(BeARegularFile())
 		Expect(filepath.Join(tempDir, "Org2ExampleCom_anchors.tx")).To(BeARegularFile())
 
-		err := w.BuildNetwork()
+		copyFile(filepath.Join("..", "e2e", "testdata", "orderer.yaml"), filepath.Join(tempDir, "orderer.yaml"))
+		err = w.BuildNetwork()
 		Expect(err).NotTo(HaveOccurred())
+		fmt.Println("Check docker now...")
+		time.Sleep(20*time.Second)
 	})
 
 	It("installs and instantiates chaincode", func() {})

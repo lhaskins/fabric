@@ -7,9 +7,9 @@ SPDX-License-Identifier: Apache-2.0
 package runner
 
 import (
-	"context"
+//	"context"
 	"encoding/base32"
-	"net/http"
+//	"net/http"
 	"time"
 
 	"github.com/hyperledger/fabric/common/util"
@@ -29,15 +29,15 @@ func UniqueName() string {
 	return base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(util.GenerateBytesUUID())
 }
 
-func endpointReady(ctx context.Context, url string) bool {
-	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	defer cancel()
-
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return false
-	}
-
-	resp, err := http.DefaultClient.Do(req.WithContext(ctx))
-	return err == nil && resp.StatusCode == http.StatusOK
-}
+//func endpointReady(ctx context.Context, url string) bool {
+//	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+//	defer cancel()
+//
+//	req, err := http.NewRequest(http.MethodGet, url, nil)
+//	if err != nil {
+//		return false
+//	}
+//
+//	resp, err := http.DefaultClient.Do(req.WithContext(ctx))
+//	return err == nil && resp.StatusCode == http.StatusOK
+//}
