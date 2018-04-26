@@ -83,8 +83,9 @@ var _ = Describe("Kafka Runner", func() {
 		err := zookeeper.Stop()
 		Expect(err).NotTo(HaveOccurred())
 
-		err = client.RemoveNetwork(networkName)
-		Expect(err).NotTo(HaveOccurred())
+		if network != nil {
+			client.RemoveNetwork(networkName)
+		}
 	})
 
 	It("starts and stops a docker container with the specified image", func() {
@@ -220,13 +221,9 @@ var _ = Describe("Kafka Runner", func() {
 
 			err = k1.Stop()
 			Expect(err).To(HaveOccurred())
-			err = k1.Remove()
-			Expect(err).NotTo(HaveOccurred())
 
 			err = k2.Stop()
 			Expect(err).To(HaveOccurred())
-			err = k2.Remove()
-			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })

@@ -104,7 +104,10 @@ func (z *Zookeeper) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 	}
 
 	containerOptions := docker.CreateContainerOptions{
-		Name:   z.Name,
+		Name: z.Name,
+		HostConfig: &docker.HostConfig{
+			AutoRemove: true,
+		},
 		Config: config,
 	}
 
@@ -225,15 +228,6 @@ func (z *Zookeeper) Stop() error {
 		return err
 	}
 
-	err = z.Client.RemoveContainer(
-		docker.RemoveContainerOptions{
-			ID:    z.containerID,
-			Force: true,
-		},
-	)
-	if err != nil {
-		return err
-	}
 	_, err = z.Client.PruneVolumes(docker.PruneVolumesOptions{})
 	return err
 }

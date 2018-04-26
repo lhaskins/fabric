@@ -3,17 +3,18 @@ package world
 import (
 	"bytes"
 	"fmt"
-	"strings"
 	"io"
 	"io/ioutil"
 	"path/filepath"
+	"strings"
 
 	"github.com/alecthomas/template"
+	docker "github.com/fsouza/go-dockerclient"
 	"github.com/hyperledger/fabric/common/tools/configtxgen/localconfig"
 	"github.com/hyperledger/fabric/integration/runner"
 	. "github.com/onsi/gomega"
+	"github.com/tedsuo/ifrit"
 	yaml "gopkg.in/yaml.v2"
-	docker "github.com/fsouza/go-dockerclient"
 )
 
 type Profile struct {
@@ -37,21 +38,28 @@ type PeerOrgConfig struct {
 }
 
 type Organization struct {
-	Name        string
-	Domain      string
-	Profile     string
-	Orderers    []OrdererConfig
-	Peers       []PeerOrgConfig
+	Name     string
+	Domain   string
+	Profile  string
+	Orderers []OrdererConfig
+	Peers    []PeerOrgConfig
+}
+
+type container interface {
+	Stop() error
 }
 
 type World struct {
-	Components  *Components
-	Network     *docker.Network
-	OrdererOrgs Organization
-	PeerOrgs    Organization
-	Profiles    map[string]localconfig.Profile
-	Cryptogen   runner.Cryptogen
-	Deployment  Deployment
+	Rootpath            string
+	Components          *Components
+	Network             *docker.Network
+	OrdererOrgs         Organization
+	PeerOrgs            Organization
+	Profiles            map[string]localconfig.Profile
+	Cryptogen           runner.Cryptogen
+	Deployment          Deployment
+	RunningContainer    []container
+	RunningLocalProcess []ifrit.Process
 }
 
 type Chaincode struct {
@@ -74,7 +82,7 @@ type Deployment struct {
 	// chaincode name to peer names map[string][]string
 }
 
-func (w *World) Construct(rootpath string) {
+func (w *World) Construct() {
 	var ordererCrypto = `
 OrdererOrgs:
   - Name: {{.Name}}
@@ -106,7 +114,7 @@ PeerOrgs: {{range .Peers}}
 	buf := &bytes.Buffer{}
 	w.OrdererOrgs.buildTemplate(buf, ordererCrypto)
 	w.PeerOrgs.buildTemplate(buf, peerCrypto)
-	err := ioutil.WriteFile(filepath.Join(rootpath, "crypto.yaml"), buf.Bytes(), 0644)
+	err := ioutil.WriteFile(filepath.Join(w.Rootpath, "crypto.yaml"), buf.Bytes(), 0644)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Generates the configtx config
@@ -115,7 +123,7 @@ PeerOrgs: {{range .Peers}}
 	}
 	profileData, err := yaml.Marshal(&profiles{w.Profiles})
 	Expect(err).NotTo(HaveOccurred())
-	err = ioutil.WriteFile(filepath.Join(rootpath, "configtx.yaml"), profileData, 0644)
+	err = ioutil.WriteFile(filepath.Join(w.Rootpath, "configtx.yaml"), profileData, 0644)
 	Expect(err).NotTo(HaveOccurred())
 }
 
@@ -126,8 +134,8 @@ func (o *Organization) buildTemplate(w io.Writer, orgTemplate string) {
 	Expect(err).NotTo(HaveOccurred())
 }
 
-func (w *World) BootstrapNetwork(rootpath string) (err error) {
-	w.Construct(rootpath)
+func (w *World) BootstrapNetwork() (err error) {
+	w.Construct()
 
 	w.Cryptogen.Path = w.Components.Paths["cryptogen"]
 	r := w.Cryptogen.Generate()
@@ -140,8 +148,8 @@ func (w *World) BootstrapNetwork(rootpath string) (err error) {
 		Path:      w.Components.Paths["configtxgen"],
 		ChannelID: w.Deployment.SystemChannel,
 		Profile:   w.OrdererOrgs.Profile,
-		ConfigDir: rootpath,
-		Output:    filepath.Join(rootpath, fmt.Sprintf("%s.block", w.Deployment.SystemChannel)),
+		ConfigDir: w.Rootpath,
+		Output:    filepath.Join(w.Rootpath, fmt.Sprintf("%s.block", w.Deployment.SystemChannel)),
 	}
 	r = configtxgen.OutputBlock()
 	err = execute(r)
@@ -153,8 +161,8 @@ func (w *World) BootstrapNetwork(rootpath string) (err error) {
 		Path:      w.Components.Paths["configtxgen"],
 		ChannelID: w.Deployment.Channel,
 		Profile:   w.PeerOrgs.Profile,
-		ConfigDir: rootpath,
-		Output:    filepath.Join(rootpath, fmt.Sprintf("%s.tx", w.Deployment.Channel)),
+		ConfigDir: w.Rootpath,
+		Output:    filepath.Join(w.Rootpath, fmt.Sprintf("%s.tx", w.Deployment.Channel)),
 	}
 	r = configtxgen.OutputCreateChannelTx()
 	err = execute(r)
@@ -168,8 +176,8 @@ func (w *World) BootstrapNetwork(rootpath string) (err error) {
 			ChannelID: w.Deployment.Channel,
 			AsOrg:     peer.Name,
 			Profile:   w.PeerOrgs.Profile,
-			ConfigDir: rootpath,
-			Output:    filepath.Join(rootpath, fmt.Sprintf("%s_anchors.tx", peer.Name)),
+			ConfigDir: w.Rootpath,
+			Output:    filepath.Join(w.Rootpath, fmt.Sprintf("%s_anchors.tx", peer.Name)),
 		}
 		r = configtxgen.OutputAnchorPeersUpdate()
 		err = execute(r)
@@ -177,54 +185,65 @@ func (w *World) BootstrapNetwork(rootpath string) (err error) {
 	return err
 }
 
-func (w *World) BuildNetwork(rootpath string) (err error){
-	var (
-		z       *runner.Zookeeper
-		k       *runner.Kafka
-		kafkas []*runner.Kafka
-//		o *runner.Orderer
-//		p *runner.Peer
+func (w *World) BuildNetwork() {
+	w.ordererNetwork()
+	w.peerNetwork()
+}
 
-		zookeepers []string
-		zooservers []string
+func (w *World) ordererNetwork() {
+	var (
+		zookeepers, kafkaBrokerList []string
+		z                           *runner.Zookeeper
+		kafkas                      []*runner.Kafka
+		o                           *runner.Orderer
 	)
 
 	o = w.Components.Orderer()
-	for orderer := range(w.OrdererOrgs.Orderers) {
-		o.OrdererType = "solo"
-		if w.OrdererOrgs.Orderers[orderer].BrokerCount !=  0 {
-			o.OrdererType = "kafka"
+	for orderer := range w.OrdererOrgs.Orderers {
+		if w.OrdererOrgs.Orderers[orderer].BrokerCount != 0 {
 			for id := 1; id <= w.OrdererOrgs.Orderers[orderer].ZookeeperCount; id++ {
 				z = w.Components.Zookeeper(id, w.Network)
-				err = z.Start()
-				zookeepers = append(zookeepers, fmt.Sprintf("zookeeper%d:2181 ", id))
-				zooservers = append(zooservers, fmt.Sprintf("server.%d=zookeeper%d:2888:3888 ", id, id))
+				zookeepers = append(zookeepers, fmt.Sprintf("zookeeper%d:2181", id))
+				err := z.Start()
+				Expect(err).NotTo(HaveOccurred())
+				w.RunningContainer = append(w.RunningContainer, z)
 			}
-			fmt.Println("Zookeeper string:", zookeepers)
-			fmt.Println("Zooservers string:", zooservers)
+
 			for id := 1; id <= w.OrdererOrgs.Orderers[orderer].BrokerCount; id++ {
-				k = w.Components.Kafka(id, w.Network)
+				k := w.Components.Kafka(id, w.Network)
 				k.KafkaMinInsyncReplicas = w.OrdererOrgs.Orderers[orderer].KafkaMinInsyncReplicas
 				k.KafkaDefaultReplicationFactor = w.OrdererOrgs.Orderers[orderer].KafkaDefaultReplicationFactor
-				k.KafkaZookeeperConnect = strings.Join(zookeepers, " ")
-				err = k.Start()
+				k.KafkaZookeeperConnect = strings.Join(zookeepers, ",")
+				err := k.Start()
+				Expect(err).NotTo(HaveOccurred())
+
+				w.RunningContainer = append(w.RunningContainer, k)
 				kafkas = append(kafkas, k)
+				kafkaBrokerList = append(kafkaBrokerList, k.HostAddress)
 			}
-			fmt.Println("kafkas string:", kafkas)
 		}
 
-		o.ConfigDir = rootPath
-		o.OrdererHome = rootpath
-		o.ListenAddress = "0.0.0.0"
-		o.ListenPort = "7050"
-		o.LedgerLocation = rootPath
-		o.GenesisProfile = w.OrdererOrgs.Profile
-		o.GenesisMethod = "file"
-		o.GenesisFile = filepath.Join(rootPath, fmt.Sprintf("%s.block", w.Deployment.SystemChannel))
-		o.LocalMSPId = w.OrdererOrgs.Domain
-//		o.LocalMSPDir = filepath.Join(rootPath, "crypto", "ordererOrganizations", "example.com", "orderers", "orderer.example.com", "msp")
-		o.LocalMSPDir = w.Profiles[w.OrdererOrgs.Profile].MSPDir
-		o.LogLevel = "debug"
+		o.ConfigDir = w.Rootpath
+		o.LedgerLocation = filepath.Join(w.Rootpath, "ledger")
+		o.ConfigtxOrdererKafkaBrokers = fmt.Sprintf("[%s]", strings.Join(kafkaBrokerList, ","))
+		ordererProcess := ifrit.Invoke(o.New())
+		Eventually(ordererProcess.Ready()).Should(BeClosed())
+		Consistently(ordererProcess.Wait()).ShouldNot(Receive())
+		w.RunningLocalProcess = append(w.RunningLocalProcess, ordererProcess)
 	}
-	return err
+}
+
+func (w *World) peerNetwork() {
+	var p *runner.Peer
+
+	for _, peerOrg := range w.PeerOrgs.Peers {
+		for peer := 0; peer < peerOrg.PeerCount; peer++ {
+			p = w.Components.Peer()
+			p.ConfigDir = filepath.Join(w.Rootpath, fmt.Sprintf("%s_%d", peerOrg.Domain, peer))
+			peerProcess := ifrit.Invoke(p.NodeStart())
+			Eventually(peerProcess.Ready()).Should(BeClosed())
+			Consistently(peerProcess.Wait()).ShouldNot(Receive())
+			w.RunningLocalProcess = append(w.RunningLocalProcess, peerProcess)
+		}
+	}
 }

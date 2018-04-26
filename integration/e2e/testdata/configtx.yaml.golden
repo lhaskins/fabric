@@ -3,13 +3,6 @@ Profiles:
     Consortium: MyConsortium
     Application:
       Organizations:
-      - Name: OrdererOrg1
-        ID: OrdererMSP
-        MSPDir: orderer dir
-        MSPType: ""
-        Policies: {}
-        AnchorPeers: []
-        AdminPrincipal: ""
       - Name: Org1
         ID: Org1MSP
         MSPDir: some dir

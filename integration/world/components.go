@@ -10,11 +10,11 @@ import (
 	"fmt"
 	"os"
 
+	docker "github.com/fsouza/go-dockerclient"
 	"github.com/hyperledger/fabric/integration/runner"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
 	"github.com/tedsuo/ifrit"
-	docker "github.com/fsouza/go-dockerclient"
 )
 
 type Components struct {
@@ -63,19 +63,19 @@ func (c *Components) ConfigTxGen() *runner.ConfigTxGen {
 
 func (c *Components) Zookeeper(id int, network *docker.Network) *runner.Zookeeper {
 	return &runner.Zookeeper{
-		ZooMyID: id,
-		Name:    fmt.Sprintf("zookeeper%d", id),
-		NetworkID: network.ID,
+		ZooMyID:     id,
+		Name:        fmt.Sprintf("zookeeper%d", id),
+		NetworkID:   network.ID,
 		NetworkName: network.Name,
 	}
 }
 
 func (c *Components) Kafka(id int, network *docker.Network) *runner.Kafka {
 	return &runner.Kafka{
-		Name: fmt.Sprintf("kafka%d", id),
+		Name:          fmt.Sprintf("kafka%d", id),
 		KafkaBrokerID: id,
-		NetworkID: network.ID,
-		NetworkName: network.Name,
+		NetworkID:     network.ID,
+		NetworkName:   network.Name,
 	}
 }
 

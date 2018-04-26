@@ -119,6 +119,7 @@ func (k *Kafka) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 	}
 
 	hostConfig := &docker.HostConfig{
+		AutoRemove: true,
 		PortBindings: map[docker.Port][]docker.PortBinding{
 			k.ContainerPort: []docker.PortBinding{{
 				HostIP:   k.HostIP,
@@ -292,23 +293,5 @@ func (k *Kafka) Stop() error {
 	k.stopped = true
 	k.mutex.Unlock()
 
-	err := k.Client.StopContainer(k.ContainerID, 0)
-	if err != nil {
-		return err
-	}
-
-	return k.Client.RemoveContainer(
-		docker.RemoveContainerOptions{
-			ID:    k.ContainerID,
-			Force: true,
-		},
-	)
-}
-func (k *Kafka) Remove() error {
-	return k.Client.RemoveContainer(
-		docker.RemoveContainerOptions{
-			ID:    k.ContainerID,
-			Force: true,
-		},
-	)
+	return k.Client.StopContainer(k.ContainerID, 0)
 }

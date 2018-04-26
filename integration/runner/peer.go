@@ -49,7 +49,7 @@ func (p *Peer) NodeStart() *ginkgomon.Runner {
 	return r
 }
 
-func (p *Peer) ChaincodeList() *ginkgomon.Runner {
+func (p *Peer) ChaincodeListInstalled() *ginkgomon.Runner {
 	cmd := exec.Command(p.Path, "chaincode", "list", "--installed")
 	p.setupEnvironment(cmd)
 

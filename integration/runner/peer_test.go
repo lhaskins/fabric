@@ -16,9 +16,9 @@ import (
 	"github.com/hyperledger/fabric/integration/runner"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/tedsuo/ifrit/ginkgomon"
-	"github.com/tedsuo/ifrit"
 	"github.com/onsi/gomega/gbytes"
+	"github.com/tedsuo/ifrit"
+	"github.com/tedsuo/ifrit/ginkgomon"
 )
 
 var _ = Describe("Peer", func() {
@@ -75,11 +75,7 @@ var _ = Describe("Peer", func() {
 		copyFile(filepath.Join("testdata", "orderer.yaml"), filepath.Join(tempDir, "orderer.yaml"))
 		orderer = components.Orderer()
 		orderer.ConfigDir = tempDir
-//		orderer.OrdererType = "solo"
 		orderer.LedgerLocation = tempDir
-//		orderer.GenesisProfile = "TwoOrgsOrdererGenesis"
-//		orderer.LocalMSPId = "OrdererMSP"
-//		orderer.LocalMSPDir = filepath.Join(cryptoDir, "ordererOrganizations/example.com/orderers/orderer.example.com/msp")
 		orderer.LogLevel = "DEBUG"
 
 		ordererRunner = orderer.New()

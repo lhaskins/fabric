@@ -1,7 +1,7 @@
 
 OrdererOrgs:
-  - Name: ExampleCom
-    Domain: example.com
+  - Name: OrdererOrg1
+    Domain: OrdererMSP
     CA:
         Country: US
         Province: California
@@ -11,8 +11,8 @@ OrdererOrgs:
       - Hostname: orderer1
 
 PeerOrgs: 
-  - Name: Org1ExampleCom
-    Domain: org1.example.com
+  - Name: Org1
+    Domain: Org1MSP
     EnableNodeOUs: true
     CA:
         Country: US
@@ -23,8 +23,8 @@ PeerOrgs:
     Users:
       Count: 2
 
-  - Name: Org2ExampleCom
-    Domain: org2.example.com
+  - Name: Org2
+    Domain: Org2MSP
     EnableNodeOUs: true
     CA:
         Country: US
