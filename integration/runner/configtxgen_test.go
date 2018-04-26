@@ -91,8 +91,8 @@ var _ = Describe("ConfigTxGen", func() {
 				process := ifrit.Invoke(r)
 				Eventually(process.Wait()).Should(Receive(HaveOccurred()))
 
-				Eventually(r).Should(gexec.Exit(2))
-				Expect(r.Err()).To(gbytes.Say("Could not find profile: TwoOrgsOrdererGenesis"))
+				Eventually(r).Should(gexec.Exit(1))
+				Expect(r.Err()).To(gbytes.Say("Could not find configtx.yaml"))
 			})
 		})
 	})
@@ -141,8 +141,8 @@ var _ = Describe("ConfigTxGen", func() {
 				process := ifrit.Invoke(r)
 				Eventually(process.Wait()).Should(Receive(HaveOccurred()))
 
-				Eventually(r).Should(gexec.Exit(2))
-				Expect(r.Err()).To(gbytes.Say("Could not find profile: TwoOrgsChannel"))
+				Eventually(r).Should(gexec.Exit(1))
+				Expect(r.Err()).To(gbytes.Say("Could not find configtx.yaml"))
 			})
 		})
 	})
@@ -192,8 +192,8 @@ var _ = Describe("ConfigTxGen", func() {
 				process := ifrit.Invoke(r)
 				Eventually(process.Wait()).Should(Receive(HaveOccurred()))
 
-				Eventually(r).Should(gexec.Exit(2))
-				Expect(r.Err()).To(gbytes.Say("Could not find profile: TwoOrgsChannel"))
+				Eventually(r).Should(gexec.Exit(1))
+				Expect(r.Err()).To(gbytes.Say("Could not find configtx.yaml"))
 			})
 		})
 	})

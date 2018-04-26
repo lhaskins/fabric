@@ -7,7 +7,6 @@ SPDX-License-Identifier: Apache-2.0
 package e2e
 
 import (
-	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -116,7 +115,7 @@ var _ = Describe("EndToEnd", func() {
 					PeerCount:     1,
 				}},
 			},
-			Profiles: world.Profiles{map[string]localconfig.Profile{
+			Profiles: map[string]localconfig.Profile{
 				"TwoOrgsChannel": localconfig.Profile{
 					Consortium: "SampleConsortium",
 					Application: &localconfig.Application{
@@ -131,7 +130,7 @@ var _ = Describe("EndToEnd", func() {
 				},
 				"TwoOrgsOrdererGenesis": localconfig.Profile{
 					Application: &localconfig.Application{
-						//Organizations: append(ordererOrgs, peerOrgs...),
+
 						Organizations: ordererOrgs,
 						Capabilities: map[string]bool{
 							"V1_2": true,
@@ -160,54 +159,55 @@ var _ = Describe("EndToEnd", func() {
 						"V1_1": true,
 					},
 				},
-			}},
+			},
 		}
 
-		w.Construct(testDir)
+		err := w.BootstrapNetwork(testDir)
+//		w.Construct(testDir)
 		Expect(filepath.Join(testDir, "configtx.yaml")).To(BeARegularFile())
 		Expect(filepath.Join(testDir, "crypto.yaml")).To(BeARegularFile())
 
-		By("generating crypto")
-		cryptogen := components.Cryptogen()
-		cryptogen.Config = filepath.Join(testDir, "crypto.yaml")
-		cryptogen.Output = filepath.Join(testDir, "crypto")
-		r := cryptogen.Generate()
-		execute(r)
+//		By("generating crypto")
+//		cryptogen := components.Cryptogen()
+//		cryptogen.Config = filepath.Join(testDir, "crypto.yaml")
+//		cryptogen.Output = filepath.Join(testDir, "crypto")
+//		r := cryptogen.Generate()
+//		execute(r)
 		Expect(filepath.Join(testDir, "crypto", "peerOrganizations")).To(BeADirectory())
 		Expect(filepath.Join(testDir, "crypto", "ordererOrganizations")).To(BeADirectory())
-
-		By("building the orderer block")
-		configtxgen := components.ConfigTxGen()
-		configtxgen.ConfigDir = testDir
-		configtxgen.ChannelID = "systestchannel"
-		configtxgen.Profile = "TwoOrgsOrdererGenesis"
-		configtxgen.Output = filepath.Join(testDir, "systestchannel.block")
-		r = configtxgen.OutputBlock()
-		execute(r)
+//
+//		By("building the orderer block")
+//		configtxgen := components.ConfigTxGen()
+//		configtxgen.ConfigDir = testDir
+//		configtxgen.ChannelID = "systestchannel"
+//		configtxgen.Profile = "TwoOrgsOrdererGenesis"
+//		configtxgen.Output = filepath.Join(testDir, "systestchannel.block")
+//		r = configtxgen.OutputBlock()
+//		execute(r)
 		Expect(filepath.Join(testDir, "systestchannel.block")).To(BeARegularFile())
-
-		By("building the channel transaction file")
-		configtxgen.Profile = "TwoOrgsChannel"
-		configtxgen.ChannelID = w.Deployment.Channel
-		configtxgen.Output = filepath.Join(testDir, "testchannel.tx")
-		r = configtxgen.OutputCreateChannelTx()
-		execute(r)
+//
+//		By("building the channel transaction file")
+//		configtxgen.Profile = "TwoOrgsChannel"
+//		configtxgen.ChannelID = w.Deployment.Channel
+//		configtxgen.Output = filepath.Join(testDir, "testchannel.tx")
+//		r = configtxgen.OutputCreateChannelTx()
+//		execute(r)
 		Expect(filepath.Join(testDir, "testchannel.tx")).To(BeARegularFile())
-
-		By("building the channel transaction file for Org1 anchor peer")
-		configtxgen.Profile = "TwoOrgsChannel"
-		configtxgen.Output = filepath.Join(testDir, "Org1MSPanchors.tx")
-		configtxgen.AsOrg = "Org1"
-		r = configtxgen.OutputAnchorPeersUpdate()
-		execute(r)
+//
+//		By("building the channel transaction file for Org1 anchor peer")
+//		configtxgen.Profile = "TwoOrgsChannel"
+//		configtxgen.Output = filepath.Join(testDir, "Org1MSPanchors.tx")
+//		configtxgen.AsOrg = "Org1"
+//		r = configtxgen.OutputAnchorPeersUpdate()
+//		execute(r)
 		Expect(filepath.Join(testDir, "Org1MSPanchors.tx")).To(BeARegularFile())
-
-		By("building the channel transaction file for Org2 anchor peer")
-		configtxgen.Profile = "TwoOrgsChannel"
-		configtxgen.Output = filepath.Join(testDir, "Org2MSPanchors.tx")
-		configtxgen.AsOrg = "Org2"
-		r = configtxgen.OutputAnchorPeersUpdate()
-		execute(r)
+//
+//		By("building the channel transaction file for Org2 anchor peer")
+//		configtxgen.Profile = "TwoOrgsChannel"
+//		configtxgen.Output = filepath.Join(testDir, "Org2MSPanchors.tx")
+//		configtxgen.AsOrg = "Org2"
+//		r = configtxgen.OutputAnchorPeersUpdate()
+//		execute(r)
 		Expect(filepath.Join(testDir, "Org2MSPanchors.tx")).To(BeARegularFile())
 
 		By("starting a zookeeper")
@@ -215,6 +215,8 @@ var _ = Describe("EndToEnd", func() {
 		err := zookeeper.Start()
 		Expect(err).NotTo(HaveOccurred())
 		defer zookeeper.Stop()
+
+		//		Eventually(outBuffer1, 30*time.Second).Should(gbytes.Say(`\QWooooo Eeeeeee Ooo Ah Ah Bing Bang Walla Walla Bing Bang\E`))
 
 		By("starting a solo orderer")
 		orderer := components.Orderer()
@@ -357,7 +359,7 @@ var _ = Describe("EndToEnd", func() {
 		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
 		adminRunner = adminPeer.ChaincodeListInstalled()
 		execute(adminRunner)
-		Eventually(adminRunner.Out()).Should(gbytes.Say("Path: simple/cmd"))
+		Eventually(adminRunner.Buffer()).Should(gbytes.Say("Path: simple/cmd"))
 
 		By("Wait for chaincode to complete instantiation")
 		listInstantiated := func() bool {
@@ -369,7 +371,7 @@ var _ = Describe("EndToEnd", func() {
 			if err != nil {
 				return false
 			}
-			return strings.Contains(string(adminRunner.Out().Contents()), "Path: simple/cmd")
+			return strings.Contains(string(adminRunner.Buffer().Contents()), "Path: simple/cmd")
 		}
 		Eventually(listInstantiated, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
 
@@ -379,7 +381,7 @@ var _ = Describe("EndToEnd", func() {
 		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
 		adminRunner = adminPeer.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
 		execute(adminRunner)
-		Eventually(adminRunner.Out()).Should(gbytes.Say("Query Result: 100"))
+		Eventually(adminRunner.Buffer()).Should(gbytes.Say("100"))
 
 		By("invoke chaincode")
 		adminPeer = components.Peer()
@@ -395,7 +397,7 @@ var _ = Describe("EndToEnd", func() {
 		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
 		adminRunner = adminPeer.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
 		execute(adminRunner)
-		Eventually(adminRunner.Out()).Should(gbytes.Say("Query Result: 90"))
+		Eventually(adminRunner.Buffer()).Should(gbytes.Say("90"))
 
 		By("update channel")
 		adminPeer = components.Peer()

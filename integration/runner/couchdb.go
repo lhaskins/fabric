@@ -43,6 +43,7 @@ func UniqueName() string {
 	encoded := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(uuid)
 	return strings.ToLower(encoded)
 }
+const DefaultCouchDBImage = "hyperledger/fabric-couchdb:latest"
 
 // CouchDB manages the execution of an instance of a dockerized CounchDB
 // for tests.
@@ -70,7 +71,7 @@ type CouchDB struct {
 // Run runs a CouchDB container. It implements the ifrit.Runner interface
 func (c *CouchDB) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 	if c.Image == "" {
-		c.Image = DefaultImage
+		c.Image = DefaultCouchDBImage
 	}
 
 	if c.Name == "" {

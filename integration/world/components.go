@@ -13,6 +13,7 @@ import (
 	"github.com/hyperledger/fabric/integration/runner"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
+	"github.com/tedsuo/ifrit"
 )
 
 type Components struct {
@@ -62,7 +63,7 @@ func (c *Components) ConfigTxGen() *runner.ConfigTxGen {
 func (c *Components) Zookeeper(id int) *runner.Zookeeper {
 	return &runner.Zookeeper{
 		ZooMyID: id,
-		Name: fmt.Sprintf("zookeeper%d", id),
+		Name:    fmt.Sprintf("zookeeper%d", id),
 	}
 }
 
@@ -76,4 +77,11 @@ func (c *Components) Peer() *runner.Peer {
 	return &runner.Peer{
 		Path: c.Paths["peer"],
 	}
+}
+
+func execute(r ifrit.Runner) (err error) {
+	p := ifrit.Invoke(r)
+	Eventually(p.Ready()).Should(BeClosed())
+	Eventually(p.Wait()).Should(Receive(&err))
+	return err
 }

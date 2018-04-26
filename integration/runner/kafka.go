@@ -8,18 +8,15 @@ package runner
 
 import (
 	"context"
-//	"encoding/base32"
 	"fmt"
 	"io"
 	"net"
-//	"net/http"
 	"os"
 	"strconv"
 	"sync"
 	"time"
 
 	docker "github.com/fsouza/go-dockerclient"
-//	"github.com/hyperledger/fabric/common/util"
 	"github.com/pkg/errors"
 	"github.com/tedsuo/ifrit"
 )
@@ -52,7 +49,7 @@ type Kafka struct {
 	ErrorStream  io.Writer
 	OutputStream io.Writer
 
-	Network          docker.ContainerNetwork
+	NetworkID        string
 	NetworkName      string
 	ContainerID      string
 	HostAddress      string
@@ -126,45 +123,44 @@ func (k *Kafka) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 			k.ContainerPort: []docker.PortBinding{{
 				HostIP:   k.HostIP,
 				HostPort: strconv.Itoa(k.HostPort),
-                        }},
-                },
+			}},
+		},
 	}
 
 	config := &docker.Config{
-				Image: k.Image,
-				Env: []string{
-					"KAFKA_LOG_RETENTION_MS=-1",
-					fmt.Sprintf("KAFKA_MESSAGE_MAX_BYTES=%d", k.KafkaMessageMaxBytes),
-					fmt.Sprintf("KAFKA_REPLICA_FETCH_MAX_BYTES=%d", k.KafkaReplicaFetchMaxBytes),
-					fmt.Sprintf("KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE=%s", strconv.FormatBool(k.KafkaUncleanLeaderElectionEnable)),
-					fmt.Sprintf("KAFKA_DEFAULT_REPLICATION_FACTOR=%d", k.KafkaDefaultReplicationFactor),
-					fmt.Sprintf("KAFKA_MIN_INSYNC_REPLICAS=%d", k.KafkaMinInsyncReplicas),
-					fmt.Sprintf("KAFKA_BROKER_ID=%d", k.KafkaBrokerID),
-					fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT=%s", k.KafkaZookeeperConnect),
-					fmt.Sprintf("KAFKA_REPLICA_FETCH_RESPONSE_MAX_BYTES=%d", k.KafkaReplicaFetchResponseMaxBytes),
-				},
-			}
+		Image: k.Image,
+		Env: []string{
+			"KAFKA_LOG_RETENTION_MS=-1",
+			fmt.Sprintf("KAFKA_MESSAGE_MAX_BYTES=%d", k.KafkaMessageMaxBytes),
+			fmt.Sprintf("KAFKA_REPLICA_FETCH_MAX_BYTES=%d", k.KafkaReplicaFetchMaxBytes),
+			fmt.Sprintf("KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE=%s", strconv.FormatBool(k.KafkaUncleanLeaderElectionEnable)),
+			fmt.Sprintf("KAFKA_DEFAULT_REPLICATION_FACTOR=%d", k.KafkaDefaultReplicationFactor),
+			fmt.Sprintf("KAFKA_MIN_INSYNC_REPLICAS=%d", k.KafkaMinInsyncReplicas),
+			fmt.Sprintf("KAFKA_BROKER_ID=%d", k.KafkaBrokerID),
+			fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT=%s", k.KafkaZookeeperConnect),
+			fmt.Sprintf("KAFKA_REPLICA_FETCH_RESPONSE_MAX_BYTES=%d", k.KafkaReplicaFetchResponseMaxBytes),
+		},
+	}
+
+	networkingConfig := &docker.NetworkingConfig{
+		EndpointsConfig: map[string]*docker.EndpointConfig{
+			k.NetworkName: &docker.EndpointConfig{
+				NetworkID: k.NetworkID,
+			},
+		},
+	}
 
 	container, err := k.Client.CreateContainer(
 		docker.CreateContainerOptions{
-			Name:       k.Name,
-			Config:     config,
-			HostConfig: hostConfig,
-		},
-	)
+			Name:             k.Name,
+			Config:           config,
+			HostConfig:       hostConfig,
+			NetworkingConfig: networkingConfig,
+		})
 	if err != nil {
 		return err
 	}
 	k.ContainerID = container.ID
-	container.NetworkSettings = &docker.NetworkSettings{
-		NetworkID: k.Network.NetworkID,
-		Networks: map[string]docker.ContainerNetwork{
-			k.NetworkName: docker.ContainerNetwork{
-				NetworkID: k.Network.NetworkID,
-				EndpointID: k.Network.EndpointID,
-			},
-		},
-	}
 
 	err = k.Client.StartContainer(container.ID, nil)
 	if err != nil {
@@ -176,33 +172,38 @@ func (k *Kafka) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 	if err != nil {
 		return err
 	}
+
 	k.HostAddress = net.JoinHostPort(
 		container.NetworkSettings.Ports[k.ContainerPort][0].HostIP,
 		container.NetworkSettings.Ports[k.ContainerPort][0].HostPort,
 	)
 	k.ContainerAddress = net.JoinHostPort(
-		container.NetworkSettings.IPAddress,
+		container.NetworkSettings.Networks[k.NetworkName].IPAddress,
 		k.ContainerPort.Port(),
 	)
 
-	err = k.streamLogs()
-	if err != nil {
-		return err
-	}
+	logContext, cancelLogs := context.WithCancel(context.Background())
+	go func() {
+		k.streamLogs(logContext)
+		// TODO: report the error or do something crazy like having another case statement in the select
+	}()
+	defer cancelLogs()
 
 	containerExit := k.wait()
 	ctx, cancel := context.WithTimeout(context.Background(), k.StartTimeout)
-	defer cancel()
+	defer func() {
+		cancel()
+	}()
 
 	select {
 	case <-ctx.Done():
 		return errors.Wrapf(ctx.Err(), "database in container %s did not start", k.ContainerID)
 	case <-containerExit:
 		return errors.New("container exited before ready")
-	case <-k.ready(ctx, k.HostAddress):
-		k.Address = k.HostAddress
 	case <-k.ready(ctx, k.ContainerAddress):
 		k.Address = k.ContainerAddress
+	case <-k.ready(ctx, k.HostAddress):
+		k.Address = k.HostAddress
 	}
 
 	cancel()
@@ -218,15 +219,18 @@ func (k *Kafka) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 
 func (k *Kafka) ready(ctx context.Context, addr string) <-chan struct{} {
 	readyCh := make(chan struct{})
-	url := fmt.Sprintf("http://%s/", addr)
 	go func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
+
 		for {
-			if endpointReady(ctx, url) {
+			conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+			if err == nil {
+				conn.Close()
 				close(readyCh)
 				return
 			}
+
 			select {
 			case <-ticker.C:
 			case <-ctx.Done():
@@ -249,19 +253,20 @@ func (k *Kafka) wait() <-chan error {
 	return exitCh
 }
 
-func (k *Kafka) streamLogs() error {
+func (k *Kafka) streamLogs(ctx context.Context) error {
 	if k.ErrorStream == nil && k.OutputStream == nil {
 		return nil
 	}
 
 	logOptions := docker.LogsOptions{
+		Context:      ctx,
 		Container:    k.ContainerID,
 		ErrorStream:  k.ErrorStream,
 		OutputStream: k.OutputStream,
 		Stderr:       k.ErrorStream != nil,
 		Stdout:       k.OutputStream != nil,
+		Follow:       true,
 	}
-
 	return k.Client.Logs(logOptions)
 }
 
@@ -292,6 +297,14 @@ func (k *Kafka) Stop() error {
 		return err
 	}
 
+	return k.Client.RemoveContainer(
+		docker.RemoveContainerOptions{
+			ID:    k.ContainerID,
+			Force: true,
+		},
+	)
+}
+func (k *Kafka) Remove() error {
 	return k.Client.RemoveContainer(
 		docker.RemoveContainerOptions{
 			ID:    k.ContainerID,

@@ -33,8 +33,10 @@ type Zookeeper struct {
 	Name           string
 	StartTimeout   time.Duration
 
-	ZooMyID    int
-	ZooServers string
+	NetworkID   string
+	NetworkName string
+	ZooMyID     int
+	ZooServers  string
 
 	ErrorStream  io.Writer
 	OutputStream io.Writer
@@ -65,7 +67,8 @@ func (z *Zookeeper) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 		z.ContainerPorts = []docker.Port{
 			docker.Port("2181/tcp"),
 			docker.Port("2888/tcp"),
-			docker.Port("3888/tcp")}
+			docker.Port("3888/tcp"),
+		}
 	}
 
 	if z.StartTimeout == 0 {
@@ -85,19 +88,31 @@ func (z *Zookeeper) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 	}
 
 	config := &docker.Config{
-				Image: z.Image,
-				Env: []string{
-					fmt.Sprintf("ZOO_MY_ID=%d", z.ZooMyID),
-					fmt.Sprintf("ZOO_SERVERS=%s", z.ZooServers),
-				},
-			}
-
-	container, err := z.Client.CreateContainer(
-		docker.CreateContainerOptions{
-			Name:       z.Name,
-			Config:     config,
+		Image: z.Image,
+		Env: []string{
+			fmt.Sprintf("ZOO_MY_ID=%d", z.ZooMyID),
+			fmt.Sprintf("ZOO_SERVERS=%s", z.ZooServers),
 		},
-	)
+	}
+
+	networkingConfig := &docker.NetworkingConfig{
+		EndpointsConfig: map[string]*docker.EndpointConfig{
+			z.NetworkName: &docker.EndpointConfig{
+				NetworkID: z.NetworkID,
+			},
+		},
+	}
+
+	containerOptions := docker.CreateContainerOptions{
+		Name:   z.Name,
+		Config: config,
+	}
+
+	if z.NetworkName != "" && z.NetworkID != "" {
+		containerOptions.NetworkingConfig = networkingConfig
+	}
+
+	container, err := z.Client.CreateContainer(containerOptions)
 	if err != nil {
 		return err
 	}
@@ -119,10 +134,12 @@ func (z *Zookeeper) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 		z.ContainerPorts[0].Port(),
 	)
 
-	err = z.streamLogs()
-	if err != nil {
-		return err
-	}
+	logContext, cancelLogs := context.WithCancel(context.Background())
+	go func() {
+		z.streamLogs(logContext)
+		// TODO: report the error or do something crazy like having another case statement in the select
+	}()
+	defer cancelLogs()
 
 	containerExit := z.wait()
 	ctx, cancel := context.WithTimeout(context.Background(), z.StartTimeout)
@@ -158,19 +175,20 @@ func (z *Zookeeper) wait() <-chan error {
 	return exitCh
 }
 
-func (z *Zookeeper) streamLogs() error {
+func (z *Zookeeper) streamLogs(ctx context.Context) error {
 	if z.ErrorStream == nil && z.OutputStream == nil {
 		return nil
 	}
 
 	logOptions := docker.LogsOptions{
-		Container:    z.containerID,
+		Context:      ctx,
+		Container:    z.ContainerID(),
 		ErrorStream:  z.ErrorStream,
 		OutputStream: z.OutputStream,
 		Stderr:       z.ErrorStream != nil,
 		Stdout:       z.OutputStream != nil,
+		Follow:       true,
 	}
-
 	return z.Client.Logs(logOptions)
 }
 
@@ -207,23 +225,15 @@ func (z *Zookeeper) Stop() error {
 		return err
 	}
 
-//	ctx, err := z.Client.ListVolumes(docker.ListVolumesOptions{})
-//	if err != nil {
-//		return err
-//	}
-//
-//	ctx, err = z.Client.PruneVolumes(PruneVolumesOptions{})
-//	err = z.Client.PruneVolumes(
-//		docker.PruneVolumesOptions{
-//			Filters: map[string][]string{},
-//			Context: ctx,
-//		},
-//	)
-
-	return z.Client.RemoveContainer(
+	err = z.Client.RemoveContainer(
 		docker.RemoveContainerOptions{
 			ID:    z.containerID,
 			Force: true,
 		},
 	)
+	if err != nil {
+		return err
+	}
+	_, err = z.Client.PruneVolumes(docker.PruneVolumesOptions{})
+	return err
 }

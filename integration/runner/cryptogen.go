@@ -23,34 +23,6 @@ type Cryptogen struct {
 	Output string
 }
 
-type ConfigGen struct {
-	OrdererOrg Organization
-	PeerOrg    Organization
-}
-
-type OrdererConfig struct {
-	Name        string
-	BrokerCount int    // 0 is solo
-	Profile     string // name of the profile
-}
-
-type PeerConfig struct {
-	Name          string
-	Domain        string
-	EnableNodeOUs bool
-	UserCount     int
-	PeerCount     int
-	MSPID         string
-}
-
-type Organization struct {
-	Name     string
-	Domain   string
-	MSPID    string
-	Orderers []OrdererConfig
-	Peers    []PeerConfig
-}
-
 // Generate uses cryptogen to generate cryptographic material for fabric.
 func (c *Cryptogen) Generate(extraArgs ...string) *ginkgomon.Runner {
 	return ginkgomon.New(ginkgomon.Config{

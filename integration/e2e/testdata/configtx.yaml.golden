@@ -7,35 +7,41 @@ Profiles:
         ID: OrdererMSP
         MSPDir: orderer dir
         MSPType: ""
-        AdminPrincipal: ""
+        Policies: {}
         AnchorPeers: []
+        AdminPrincipal: ""
       - Name: Org1
         ID: Org1MSP
         MSPDir: some dir
         MSPType: ""
-        AdminPrincipal: ""
+        Policies: {}
         AnchorPeers:
         - Host: some host
           Port: 1111
         - Host: some host
           Port: 2222
+        AdminPrincipal: ""
       - Name: Org2
         ID: Org2MSP
         MSPDir: some other dir
         MSPType: ""
-        AdminPrincipal: ""
+        Policies: {}
         AnchorPeers:
         - Host: my host
           Port: 3333
         - Host: some host
           Port: 4444
+        AdminPrincipal: ""
       Capabilities:
         V1_2: true
       Resources: null
+      Policies: {}
+      ACLs: {}
     Orderer: null
     Consortiums: {}
     Capabilities:
       V1_1: true
+    Policies: {}
   TwoOrgsOrdererGenesis:
     Consortium: ""
     Application:
@@ -44,11 +50,14 @@ Profiles:
         ID: OrdererMSP
         MSPDir: orderer dir
         MSPType: ""
-        AdminPrincipal: ""
+        Policies: {}
         AnchorPeers: []
+        AdminPrincipal: ""
       Capabilities:
         V1_2: true
       Resources: null
+      Policies: {}
+      ACLs: {}
     Orderer:
       OrdererType: solo
       Addresses:
@@ -65,11 +74,13 @@ Profiles:
         ID: OrdererMSP
         MSPDir: orderer dir
         MSPType: ""
-        AdminPrincipal: ""
+        Policies: {}
         AnchorPeers: []
+        AdminPrincipal: ""
       MaxChannels: 0
       Capabilities:
         V1_1: true
+      Policies: {}
     Consortiums:
       MyConsortium:
         Organizations:
@@ -77,21 +88,24 @@ Profiles:
           ID: Org1MSP
           MSPDir: some dir
           MSPType: ""
-          AdminPrincipal: ""
+          Policies: {}
           AnchorPeers:
           - Host: some host
             Port: 1111
           - Host: some host
             Port: 2222
+          AdminPrincipal: ""
         - Name: Org2
           ID: Org2MSP
           MSPDir: some other dir
           MSPType: ""
-          AdminPrincipal: ""
+          Policies: {}
           AnchorPeers:
           - Host: my host
             Port: 3333
           - Host: some host
             Port: 4444
+          AdminPrincipal: ""
     Capabilities:
       V1_1: true
+    Policies: {}
