@@ -6,13 +6,16 @@ import (
 	"io"
 	"io/ioutil"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alecthomas/template"
 	docker "github.com/fsouza/go-dockerclient"
 	"github.com/hyperledger/fabric/common/tools/configtxgen/localconfig"
 	"github.com/hyperledger/fabric/integration/runner"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gbytes"
 	"github.com/tedsuo/ifrit"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -196,25 +199,31 @@ func (w *World) ordererNetwork() {
 		z                           *runner.Zookeeper
 		kafkas                      []*runner.Kafka
 		o                           *runner.Orderer
+		err                         error
 	)
 
 	o = w.Components.Orderer()
-	for orderer := range w.OrdererOrgs.Orderers {
-		if w.OrdererOrgs.Orderers[orderer].BrokerCount != 0 {
-			for id := 1; id <= w.OrdererOrgs.Orderers[orderer].ZookeeperCount; id++ {
+	for _, orderer := range w.OrdererOrgs.Orderers {
+		if orderer.BrokerCount != 0 {
+			for id := 1; id <= orderer.ZookeeperCount; id++ {
 				z = w.Components.Zookeeper(id, w.Network)
-				zookeepers = append(zookeepers, fmt.Sprintf("zookeeper%d:2181", id))
+				z.ZooServers = "server.1=zookeeper1:2888:3888"
+				zookeepers = append(zookeepers, fmt.Sprintf("zookeeper%d:2181/kafka", id))
 				err := z.Start()
 				Expect(err).NotTo(HaveOccurred())
 				w.RunningContainer = append(w.RunningContainer, z)
 			}
 
-			for id := 1; id <= w.OrdererOrgs.Orderers[orderer].BrokerCount; id++ {
+			for id := 1; id <= orderer.BrokerCount; id++ {
 				k := w.Components.Kafka(id, w.Network)
-				k.KafkaMinInsyncReplicas = w.OrdererOrgs.Orderers[orderer].KafkaMinInsyncReplicas
-				k.KafkaDefaultReplicationFactor = w.OrdererOrgs.Orderers[orderer].KafkaDefaultReplicationFactor
+				localKafkaAddress := w.Profiles[w.OrdererOrgs.Profile].Orderer.Kafka.Brokers[id-1]
+				k.HostPort, err = strconv.Atoi(strings.Split(localKafkaAddress, ":")[1])
+				Expect(err).NotTo(HaveOccurred())
+				k.KafkaMinInsyncReplicas = orderer.KafkaMinInsyncReplicas
+				k.KafkaDefaultReplicationFactor = orderer.KafkaDefaultReplicationFactor
 				k.KafkaZookeeperConnect = strings.Join(zookeepers, ",")
-				err := k.Start()
+				k.LogLevel = "debug"
+				err = k.Start()
 				Expect(err).NotTo(HaveOccurred())
 
 				w.RunningContainer = append(w.RunningContainer, k)
@@ -226,6 +235,7 @@ func (w *World) ordererNetwork() {
 		o.ConfigDir = w.Rootpath
 		o.LedgerLocation = filepath.Join(w.Rootpath, "ledger")
 		o.ConfigtxOrdererKafkaBrokers = fmt.Sprintf("[%s]", strings.Join(kafkaBrokerList, ","))
+		o.LogLevel = "debug"
 		ordererProcess := ifrit.Invoke(o.New())
 		Eventually(ordererProcess.Ready()).Should(BeClosed())
 		Consistently(ordererProcess.Wait()).ShouldNot(Receive())
@@ -246,4 +256,65 @@ func (w *World) peerNetwork() {
 			w.RunningLocalProcess = append(w.RunningLocalProcess, peerProcess)
 		}
 	}
+}
+
+func (w *World) SetupChannel() error {
+	var p *runner.Peer
+
+	p = w.Components.Peer()
+	p.ConfigDir = filepath.Join(w.Rootpath, "org1.example.com_0")
+	p.LogLevel = "debug"
+	p.MSPConfigPath = filepath.Join(w.Rootpath, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+	adminRunner := p.CreateChannel(w.Deployment.Channel, filepath.Join(w.Rootpath, fmt.Sprintf("%s.tx", w.Deployment.Channel)))
+	execute(adminRunner)
+	//	Eventually(ordererRunner.Err(), 5*time.Second).Should(gbytes.Say(fmt.Sprintf("Created and starting new chain %s", w.Deployment.Channel)))
+
+	for _, peerOrg := range w.PeerOrgs.Peers {
+		for peer := 0; peer < peerOrg.PeerCount; peer++ {
+			p = w.Components.Peer()
+			peerDir := fmt.Sprintf("%s_%d", peerOrg.Domain, peer)
+			p.LogLevel = "debug"
+			p.ConfigDir = filepath.Join(w.Rootpath, peerDir)
+			p.MSPConfigPath = filepath.Join(w.Rootpath, "crypto", "peerOrganizations", peerOrg.Domain, "users", fmt.Sprintf("Admin@%s", peerOrg.Domain), "msp")
+			adminRunner = p.FetchChannel(w.Deployment.Channel, filepath.Join(w.Rootpath, peerDir, fmt.Sprintf("%s.block", w.Deployment.Channel)), "0")
+			execute(adminRunner)
+			Eventually(adminRunner.Err(), 5*time.Second).Should(gbytes.Say("Received block: 0"))
+
+			fmt.Println("===============Joining Channel================", peerDir)
+			adminRunner = p.JoinChannel(filepath.Join(w.Rootpath, peerDir, fmt.Sprintf("%s.block", w.Deployment.Channel)))
+			execute(adminRunner)
+			Eventually(adminRunner.Err(), 5*time.Second).Should(gbytes.Say("Successfully submitted proposal to join channel"))
+
+			fmt.Println("===============Installing Chaincode================", peerDir)
+			p.ExecPath = w.Deployment.Chaincode.ExecPath
+			p.GoPath = w.Deployment.Chaincode.GoPath
+			adminRunner = p.InstallChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Chaincode.Path)
+			execute(adminRunner)
+			Eventually(adminRunner.Err(), 5*time.Second).Should(gbytes.Say(`\QInstalled remotely response:<status:200 payload:"OK" >\E`))
+			//Eventually(peerRunner.Err(), 5*time.Second).Should(gbytes.Say(fmt.Sprintf(`\QInstalled Chaincode [%s] Version [1.0] to peer\E`, w.Deployment.Chaincode.Name)))
+		}
+	}
+
+	//	fmt.Println("===============Instantiating Chaincode================")
+	//	p = w.Components.Peer()
+	//	p.ConfigDir = filepath.Join(w.Rootpath, "org1.example.com_0")
+	//	p.LogLevel = "debug"
+	//	p.MSPConfigPath = filepath.Join(w.Rootpath, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+	//	adminRunner = p.InstantiateChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Orderer, w.Deployment.Channel, w.Deployment.InitArgs, w.Deployment.Policy)
+	//	adminProcess := ifrit.Invoke(adminRunner)
+	//	Eventually(adminProcess.Ready(), 2*time.Second).Should(BeClosed())
+	//	Eventually(adminProcess.Wait(), 10*time.Second).ShouldNot(Receive(BeNil()))
+	//
+	//	listInstantiated := func() bool {
+	//		adminPeer = components.Peer()
+	//		adminPeer.ConfigDir = peer.ConfigDir
+	//		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+	//		adminRunner = adminPeer.ChaincodeListInstantiated(w.Deployment.Channel)
+	//		err := execute(adminRunner)
+	//		if err != nil {
+	//			return false
+	//		}
+	//		return strings.Contains(string(adminRunner.Buffer().Contents()), "Path: simple/cmd")
+	//	}
+	return nil
 }

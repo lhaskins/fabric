@@ -102,8 +102,9 @@ peer:
             Security: 256
             FileKeyStore:
                 KeyStore:
-    mspConfigPath: ../crypto/peerOrganizations/org1.example.com/peers/peer1.org1.example.com/msp
-    localMspId: Org1MSP
+    mspConfigPath: ../crypto/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
+    #mspConfigPath: ../crypto/peerOrganizations/org1.example.com/peers/peer1.org1.example.com/msp
+    localMspId: Org1ExampleCom
     deliveryclient:
         reconnectTotalTimeThreshold: 3600s
     localMspType: bccsp

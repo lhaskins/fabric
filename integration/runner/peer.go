@@ -19,6 +19,7 @@ type Peer struct {
 	ExecPath      string
 	ConfigDir     string
 	MSPConfigPath string
+	LogLevel      string
 }
 
 func (p *Peer) setupEnvironment(cmd *exec.Cmd) {
@@ -33,6 +34,9 @@ func (p *Peer) setupEnvironment(cmd *exec.Cmd) {
 	}
 	if p.ExecPath != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("PATH=%s", p.ExecPath))
+	}
+	if p.LogLevel != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("CORE_LOGGING_LEVEL=%s", p.LogLevel))
 	}
 }
 

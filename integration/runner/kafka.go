@@ -45,6 +45,7 @@ type Kafka struct {
 	KafkaBrokerID                     int
 	KafkaZookeeperConnect             string
 	KafkaReplicaFetchResponseMaxBytes int
+	LogLevel                          string
 
 	ErrorStream  io.Writer
 	OutputStream io.Writer
@@ -98,12 +99,8 @@ func (k *Kafka) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 		k.KafkaMinInsyncReplicas = 1
 	}
 
-	if k.KafkaBrokerID == 0 {
-		k.KafkaBrokerID = 0
-	}
-
 	if k.KafkaZookeeperConnect == "" {
-		k.KafkaZookeeperConnect = "zookeeper:2181"
+		k.KafkaZookeeperConnect = "zookeeper:2181/kafka"
 	}
 
 	if k.KafkaMessageMaxBytes == 0 {
@@ -118,6 +115,9 @@ func (k *Kafka) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 		k.KafkaReplicaFetchResponseMaxBytes = 10485760
 	}
 
+	if k.LogLevel == "" {
+		k.LogLevel = "warn"
+	}
 	hostConfig := &docker.HostConfig{
 		AutoRemove: true,
 		PortBindings: map[docker.Port][]docker.PortBinding{

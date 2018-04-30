@@ -25,7 +25,7 @@ General:
   GenesisProfile: TwoOrgsOrdererGenesis
   GenesisFile: syschannel.block
   LocalMSPDir: crypto/ordererOrganizations/example.com/orderers/orderer0.example.com/msp
-  LocalMSPID: example.com
+  LocalMSPID: ExampleCom
   Profile:
     Enabled: false
     Address: 0.0.0.0:6060

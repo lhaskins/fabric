@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,7 +18,6 @@ import (
 	"github.com/hyperledger/fabric/integration/world"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/gexec"
 	"github.com/onsi/gomega/gbytes"
 
 	"github.com/tedsuo/ifrit"
@@ -163,56 +163,56 @@ var _ = Describe("EndToEnd", func() {
 		}
 
 		err := w.BootstrapNetwork(testDir)
-//		w.Construct(testDir)
+		//		w.Construct(testDir)
 		Expect(filepath.Join(testDir, "configtx.yaml")).To(BeARegularFile())
 		Expect(filepath.Join(testDir, "crypto.yaml")).To(BeARegularFile())
 
-//		By("generating crypto")
-//		cryptogen := components.Cryptogen()
-//		cryptogen.Config = filepath.Join(testDir, "crypto.yaml")
-//		cryptogen.Output = filepath.Join(testDir, "crypto")
-//		r := cryptogen.Generate()
-//		execute(r)
+		//		By("generating crypto")
+		//		cryptogen := components.Cryptogen()
+		//		cryptogen.Config = filepath.Join(testDir, "crypto.yaml")
+		//		cryptogen.Output = filepath.Join(testDir, "crypto")
+		//		r := cryptogen.Generate()
+		//		execute(r)
 		Expect(filepath.Join(testDir, "crypto", "peerOrganizations")).To(BeADirectory())
 		Expect(filepath.Join(testDir, "crypto", "ordererOrganizations")).To(BeADirectory())
-//
-//		By("building the orderer block")
-//		configtxgen := components.ConfigTxGen()
-//		configtxgen.ConfigDir = testDir
-//		configtxgen.ChannelID = "systestchannel"
-//		configtxgen.Profile = "TwoOrgsOrdererGenesis"
-//		configtxgen.Output = filepath.Join(testDir, "systestchannel.block")
-//		r = configtxgen.OutputBlock()
-//		execute(r)
+		//
+		//		By("building the orderer block")
+		//		configtxgen := components.ConfigTxGen()
+		//		configtxgen.ConfigDir = testDir
+		//		configtxgen.ChannelID = "systestchannel"
+		//		configtxgen.Profile = "TwoOrgsOrdererGenesis"
+		//		configtxgen.Output = filepath.Join(testDir, "systestchannel.block")
+		//		r = configtxgen.OutputBlock()
+		//		execute(r)
 		Expect(filepath.Join(testDir, "systestchannel.block")).To(BeARegularFile())
-//
-//		By("building the channel transaction file")
-//		configtxgen.Profile = "TwoOrgsChannel"
-//		configtxgen.ChannelID = w.Deployment.Channel
-//		configtxgen.Output = filepath.Join(testDir, "testchannel.tx")
-//		r = configtxgen.OutputCreateChannelTx()
-//		execute(r)
+		//
+		//		By("building the channel transaction file")
+		//		configtxgen.Profile = "TwoOrgsChannel"
+		//		configtxgen.ChannelID = w.Deployment.Channel
+		//		configtxgen.Output = filepath.Join(testDir, "testchannel.tx")
+		//		r = configtxgen.OutputCreateChannelTx()
+		//		execute(r)
 		Expect(filepath.Join(testDir, "testchannel.tx")).To(BeARegularFile())
-//
-//		By("building the channel transaction file for Org1 anchor peer")
-//		configtxgen.Profile = "TwoOrgsChannel"
-//		configtxgen.Output = filepath.Join(testDir, "Org1MSPanchors.tx")
-//		configtxgen.AsOrg = "Org1"
-//		r = configtxgen.OutputAnchorPeersUpdate()
-//		execute(r)
+		//
+		//		By("building the channel transaction file for Org1 anchor peer")
+		//		configtxgen.Profile = "TwoOrgsChannel"
+		//		configtxgen.Output = filepath.Join(testDir, "Org1MSPanchors.tx")
+		//		configtxgen.AsOrg = "Org1"
+		//		r = configtxgen.OutputAnchorPeersUpdate()
+		//		execute(r)
 		Expect(filepath.Join(testDir, "Org1MSPanchors.tx")).To(BeARegularFile())
-//
-//		By("building the channel transaction file for Org2 anchor peer")
-//		configtxgen.Profile = "TwoOrgsChannel"
-//		configtxgen.Output = filepath.Join(testDir, "Org2MSPanchors.tx")
-//		configtxgen.AsOrg = "Org2"
-//		r = configtxgen.OutputAnchorPeersUpdate()
-//		execute(r)
+		//
+		//		By("building the channel transaction file for Org2 anchor peer")
+		//		configtxgen.Profile = "TwoOrgsChannel"
+		//		configtxgen.Output = filepath.Join(testDir, "Org2MSPanchors.tx")
+		//		configtxgen.AsOrg = "Org2"
+		//		r = configtxgen.OutputAnchorPeersUpdate()
+		//		execute(r)
 		Expect(filepath.Join(testDir, "Org2MSPanchors.tx")).To(BeARegularFile())
 
 		By("starting a zookeeper")
 		zookeeper := components.Zookeeper(0)
-		err := zookeeper.Start()
+		err = zookeeper.Start()
 		Expect(err).NotTo(HaveOccurred())
 		defer zookeeper.Stop()
 
@@ -223,16 +223,16 @@ var _ = Describe("EndToEnd", func() {
 		copyFile(filepath.Join(testdataDir, "core.yaml"), filepath.Join(testDir, "core.yaml"))
 		copyFile(filepath.Join(testdataDir, "orderer.yaml"), filepath.Join(testDir, "orderer.yaml"))
 		orderer.ConfigDir = testDir
-		orderer.OrdererType = "solo"
-		orderer.OrdererHome = testDir
-		orderer.ListenAddress = "0.0.0.0"
-		orderer.ListenPort = "7050"
+		//		orderer.OrdererType = "solo"
+		//		orderer.OrdererHome = testDir
+		//		orderer.ListenAddress = "0.0.0.0"
+		//		orderer.ListenPort = "7050"
 		orderer.LedgerLocation = testDir
-		orderer.GenesisProfile = "TwoOrgsOrdererGenesis"
-		orderer.GenesisMethod = "file"
-		orderer.GenesisFile = filepath.Join(testDir, "systestchannel.block")
-		orderer.LocalMSPId = "OrdererMSP"
-		orderer.LocalMSPDir = filepath.Join(testDir, "crypto", "ordererOrganizations", "example.com", "orderers", "orderer.example.com", "msp")
+		//		orderer.GenesisProfile = "TwoOrgsOrdererGenesis"
+		//		orderer.GenesisMethod = "file"
+		//		orderer.GenesisFile = filepath.Join(testDir, "systestchannel.block")
+		//		orderer.LocalMSPId = "OrdererMSP"
+		//		orderer.LocalMSPDir = filepath.Join(testDir, "crypto", "ordererOrganizations", "example.com", "orderers", "orderer.example.com", "msp")
 		orderer.LogLevel = "debug"
 		ordererProcess = ifrit.Invoke(orderer.New())
 		Eventually(ordererProcess.Ready()).Should(BeClosed())
@@ -241,20 +241,20 @@ var _ = Describe("EndToEnd", func() {
 		By("starting a peer for Org1")
 		peer := components.Peer()
 		peer.ConfigDir = testDir
-		peer.LocalMSPID = "Org1MSP"
-		peer.PeerID = "peer0.org1.example.com"
-		peer.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		peer.PeerAddress = "0.0.0.0:7051"
-		peer.PeerListenAddress = "0.0.0.0:10051"
-		peer.ProfileEnabled = "true"
-		peer.ProfileListenAddress = "0.0.0.0:6060"
-		peer.FileSystemPath = filepath.Join(testDir, "peer1")
-		peer.PeerGossipBootstrap = "0.0.0.0:10051"
-		peer.PeerGossipEndpoint = "0.0.0.0:10051"
-		peer.PeerGossipExternalEndpoint = "0.0.0.0:10051"
-		peer.PeerGossipOrgLeader = "false"
-		peer.PeerGossipUseLeaderElection = "true"
-		peer.PeerEventsAddress = "0.0.0.0:10052"
+		//		peer.LocalMSPID = "Org1MSP"
+		//		peer.PeerID = "peer0.org1.example.com"
+		//		peer.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		//		peer.PeerAddress = "0.0.0.0:7051"
+		//		peer.PeerListenAddress = "0.0.0.0:10051"
+		//		peer.ProfileEnabled = "true"
+		//		peer.ProfileListenAddress = "0.0.0.0:6060"
+		//		peer.FileSystemPath = filepath.Join(testDir, "peer1")
+		//		peer.PeerGossipBootstrap = "0.0.0.0:10051"
+		//		peer.PeerGossipEndpoint = "0.0.0.0:10051"
+		//		peer.PeerGossipExternalEndpoint = "0.0.0.0:10051"
+		//		peer.PeerGossipOrgLeader = "false"
+		//		peer.PeerGossipUseLeaderElection = "true"
+		//		peer.PeerEventsAddress = "0.0.0.0:10052"
 		// peer.PeerChaincodeAddress = "0.0.0.0:10051"
 		peer.PeerChaincodeListenAddress = "0.0.0.0:7053"
 		peerProcess = ifrit.Invoke(peer.NodeStart())

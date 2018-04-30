@@ -11,10 +11,13 @@ import (
 	"github.com/hyperledger/fabric/common/tools/configtxgen/localconfig"
 	"github.com/hyperledger/fabric/integration/runner"
 	. "github.com/hyperledger/fabric/integration/world"
+	"github.com/tedsuo/ifrit"
 
+	//fileutils "github.com/cf-guardian/guardian/kernel/fileutils"
 	docker "github.com/fsouza/go-dockerclient"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gbytes"
 )
 
 var _ = Describe("Config", func() {
@@ -213,16 +216,18 @@ var _ = Describe("Config", func() {
 
 	It("start network", func() {
 		pOrg := []*localconfig.Organization{{
-			Name:   "Org1ExampleCom",
-			ID:     "org1.example.com",
+			Name: "Org1ExampleCom",
+			ID:   "Org1ExampleCom",
+			//ID:     "org1.example.com",
 			MSPDir: "crypto/peerOrganizations/org1.example.com/msp",
 			AnchorPeers: []*localconfig.AnchorPeer{{
 				Host: "peer0.org1.example.com",
 				Port: 7051,
 			}},
 		}, {
-			Name:   "Org2ExampleCom",
-			ID:     "org2.example.com",
+			Name: "Org2ExampleCom",
+			ID:   "Org2ExampleCom",
+			//ID:     "org2.example.com",
 			MSPDir: "crypto/peerOrganizations/org2.example.com/msp",
 			AnchorPeers: []*localconfig.AnchorPeer{{
 				Host: "peer0.org2.example.com",
@@ -246,14 +251,16 @@ var _ = Describe("Config", func() {
 		peerOrgs := Organization{
 			Profile: "TwoOrgsChannel",
 			Peers: []PeerOrgConfig{{
-				Name:          pOrg[0].Name,
-				Domain:        pOrg[0].ID,
+				Name: pOrg[0].Name,
+				//Domain:        pOrg[0].ID,
+				Domain:        "org1.example.com",
 				EnableNodeOUs: true,
 				UserCount:     2,
 				PeerCount:     2,
 			}, {
-				Name:          pOrg[1].Name,
-				Domain:        pOrg[1].ID,
+				Name:   pOrg[1].Name,
+				Domain: "org2.example.com",
+				//Domain:        pOrg[1].ID,
 				EnableNodeOUs: true,
 				UserCount:     2,
 				PeerCount:     2,
@@ -261,8 +268,9 @@ var _ = Describe("Config", func() {
 		}
 
 		oOrg := []*localconfig.Organization{{
-			Name:   ordererOrgs.Name,
-			ID:     ordererOrgs.Domain,
+			Name: ordererOrgs.Name,
+			ID:   "ExampleCom",
+			//ID:     ordererOrgs.Domain,
 			MSPDir: "crypto/ordererOrganizations/example.com/orderers/orderer0.example.com/msp",
 		}}
 
@@ -283,15 +291,16 @@ var _ = Describe("Config", func() {
 			SystemChannel: "syschannel",
 			Channel:       "mychannel",
 			Chaincode: Chaincode{
-				Name:     "mycc",
-				Version:  "1.0",
-				Path:     filepath.Join("simple", "cmd"),
-				GoPath:   filepath.Join("..", "e2e", "testdata", "chaincode"),
+				Name:    "mycc",
+				Version: "1.0",
+				Path:    filepath.Join("simple", "cmd"),
+				//GoPath:   filepath.Join("..", "e2e", "testdata", "chaincode"),
+				GoPath:   filepath.Join(tempDir, "chaincode"),
 				ExecPath: os.Getenv("PATH"),
 			},
 			InitArgs: `{"Args":["init","a","100","b","200"]}`,
 			Peers:    []string{"peer0.org1.example.com", "peer0.org2.example.com"},
-			Policy:   `OR ('Org1MSP.member','Org2MSP.member')`,
+			Policy:   `OR ('Org1ExampleCom.member','Org2ExampleCom.member')`,
 		}
 
 		peerProfile := localconfig.Profile{
@@ -315,7 +324,12 @@ var _ = Describe("Config", func() {
 				PreferredMaxBytes: (uint32)(512 * 1024),
 			},
 			Kafka: localconfig.Kafka{
-				Brokers: []string{},
+				Brokers: []string{
+					"127.0.0.1:9092",
+					"127.0.0.1:8092",
+					"127.0.0.1:7092",
+					"127.0.0.1:6092",
+				},
 			},
 			Organizations: oOrg,
 			OrdererType:   "solo",
@@ -325,11 +339,13 @@ var _ = Describe("Config", func() {
 
 		ordererProfile := localconfig.Profile{
 			Application: &localconfig.Application{
-				Organizations: append(oOrg, pOrg...),
+				Organizations: oOrg,
 				Capabilities:  map[string]bool{"V1_2": true}},
 			Orderer: orderer,
 			Consortiums: map[string]*localconfig.Consortium{
-				"MyConsortium": &localconfig.Consortium{Organizations: pOrg},
+				"MyConsortium": &localconfig.Consortium{
+					Organizations: append(oOrg, pOrg...),
+				},
 			},
 			Capabilities: map[string]bool{"V1_1": true},
 		}
@@ -350,6 +366,7 @@ var _ = Describe("Config", func() {
 			Profiles:    profiles,
 		}
 
+		By("Build network")
 		err = w.BootstrapNetwork()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(filepath.Join(tempDir, "configtx.yaml")).To(BeARegularFile())
@@ -370,16 +387,47 @@ var _ = Describe("Config", func() {
 			}
 		}
 		w.BuildNetwork()
+
+		By("Setup channel", func() {})
+		copyDir(filepath.Join("..", "e2e", "testdata", "chaincode"), filepath.Join(tempDir, "chaincode"))
+		err = w.SetupChannel()
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Verify chaincode installed")
+		fmt.Println("===============Checking Chaincode Install================")
+		adminPeer := components.Peer()
+		adminPeer.LogLevel = "debug"
+		adminPeer.ConfigDir = filepath.Join(tempDir, "org1.example.com_0")
+		adminPeer.MSPConfigPath = filepath.Join(tempDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner := adminPeer.ChaincodeListInstalled()
+		adminProcess := ifrit.Invoke(adminRunner)
+		Eventually(adminProcess.Ready(), 2*time.Second).Should(BeClosed())
+		Eventually(adminProcess.Wait(), 5*time.Second).ShouldNot(Receive(BeNil()))
+		Eventually(adminRunner.Buffer()).Should(gbytes.Say("Path: simple/cmd"))
+		fmt.Println("===============Checked Chaincode Install================")
 	})
 
-	It("installs and instantiates chaincode", func() {})
-
-	It("deploys and bootstraps", func() {})
 })
 
 func copyFile(src, dest string) {
 	data, err := ioutil.ReadFile(src)
 	Expect(err).NotTo(HaveOccurred())
 	err = ioutil.WriteFile(dest, data, 0774)
+	Expect(err).NotTo(HaveOccurred())
+}
+
+func copyDir(src, dest string) {
+	os.MkdirAll(dest, 0755)
+	dir, _ := os.Open(src)
+	objects, err := dir.Readdir(-1)
+	for _, obj := range objects {
+		srcfileptr := src + "/" + obj.Name()
+		destfileptr := dest + "/" + obj.Name()
+		if obj.IsDir() {
+			copyDir(srcfileptr, destfileptr)
+		} else {
+			copyFile(srcfileptr, destfileptr)
+		}
+	}
 	Expect(err).NotTo(HaveOccurred())
 }
