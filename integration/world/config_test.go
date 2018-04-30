@@ -41,13 +41,46 @@ var _ = Describe("Config", func() {
 		//		fmt.Printf("\n---\n%s\n---\n", output)
 		os.RemoveAll(tempDir)
 
+		// Stop the docker constainers for zookeeper and kafka
 		for _, cont := range w.RunningContainer {
 			cont.Stop()
 		}
+
+		// Stop the running chaincode containers
+		allContainers, _ := client.ListContainers(docker.ListContainersOptions{
+			All: true,
+		})
+		if len(allContainers) > 0 {
+			for _, peerOrg := range w.PeerOrgs.Peers {
+				for peer := 0; peer < peerOrg.PeerCount; peer++ {
+					peerName := fmt.Sprintf("peer%d.%s", peer, peerOrg.Domain)
+					id := fmt.Sprintf("%s-%s-%s-%s", network.Name, peerName, w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version)
+					client.RemoveContainer(docker.RemoveContainerOptions{
+						ID:    id,
+						Force: true,
+					})
+				}
+			}
+		}
+
+		// Remove chaincode image
+		filters := map[string][]string{}
+		filters["label"] = []string{fmt.Sprintf("org.hyperledger.fabric.chaincode.id.name=%s", w.Deployment.Chaincode.Name)}
+		images, _ := client.ListImages(docker.ListImagesOptions{
+			Filters: filters,
+		})
+		if len(images) > 0 {
+			for _, image := range images {
+				client.RemoveImage(image.ID)
+			}
+		}
+
+		// Stop the orderers and peers
 		for _, localProc := range w.RunningLocalProcess {
 			localProc.Signal(syscall.SIGTERM)
 		}
 
+		// Remove any started networks
 		if network != nil {
 			client.RemoveNetwork(network.Name)
 		}
@@ -291,10 +324,9 @@ var _ = Describe("Config", func() {
 			SystemChannel: "syschannel",
 			Channel:       "mychannel",
 			Chaincode: Chaincode{
-				Name:    "mycc",
-				Version: "1.0",
-				Path:    filepath.Join("simple", "cmd"),
-				//GoPath:   filepath.Join("..", "e2e", "testdata", "chaincode"),
+				Name:     "mycc",
+				Version:  "1.0",
+				Path:     filepath.Join("simple", "cmd"),
 				GoPath:   filepath.Join(tempDir, "chaincode"),
 				ExecPath: os.Getenv("PATH"),
 			},
@@ -332,9 +364,10 @@ var _ = Describe("Config", func() {
 				},
 			},
 			Organizations: oOrg,
-			OrdererType:   "solo",
-			Addresses:     []string{"0.0.0.0:7050"},
-			Capabilities:  map[string]bool{"V1_1": true},
+			//OrdererType:   "kafka",
+			OrdererType:  "solo",
+			Addresses:    []string{"0.0.0.0:7050"},
+			Capabilities: map[string]bool{"V1_1": true},
 		}
 
 		ordererProfile := localconfig.Profile{
@@ -388,7 +421,7 @@ var _ = Describe("Config", func() {
 		}
 		w.BuildNetwork()
 
-		By("Setup channel", func() {})
+		By("Setup channel")
 		copyDir(filepath.Join("..", "e2e", "testdata", "chaincode"), filepath.Join(tempDir, "chaincode"))
 		err = w.SetupChannel()
 		Expect(err).NotTo(HaveOccurred())

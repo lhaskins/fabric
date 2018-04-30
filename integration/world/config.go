@@ -208,12 +208,13 @@ func (w *World) ordererNetwork() {
 			for id := 1; id <= orderer.ZookeeperCount; id++ {
 				z = w.Components.Zookeeper(id, w.Network)
 				z.ZooServers = "server.1=zookeeper1:2888:3888"
-				zookeepers = append(zookeepers, fmt.Sprintf("zookeeper%d:2181/kafka", id))
+				zookeepers = append(zookeepers, fmt.Sprintf("zookeeper%d:2181", id))
 				err := z.Start()
 				Expect(err).NotTo(HaveOccurred())
 				w.RunningContainer = append(w.RunningContainer, z)
 			}
 
+			time.Sleep(2 * time.Second)
 			for id := 1; id <= orderer.BrokerCount; id++ {
 				k := w.Components.Kafka(id, w.Network)
 				localKafkaAddress := w.Profiles[w.OrdererOrgs.Profile].Orderer.Kafka.Brokers[id-1]
@@ -231,6 +232,9 @@ func (w *World) ordererNetwork() {
 				kafkaBrokerList = append(kafkaBrokerList, k.HostAddress)
 			}
 		}
+
+		time.Sleep(45 * time.Second)
+		fmt.Println("KafkaList:", kafkaBrokerList)
 
 		o.ConfigDir = w.Rootpath
 		o.LedgerLocation = filepath.Join(w.Rootpath, "ledger")
@@ -295,26 +299,28 @@ func (w *World) SetupChannel() error {
 		}
 	}
 
-	//	fmt.Println("===============Instantiating Chaincode================")
-	//	p = w.Components.Peer()
-	//	p.ConfigDir = filepath.Join(w.Rootpath, "org1.example.com_0")
-	//	p.LogLevel = "debug"
-	//	p.MSPConfigPath = filepath.Join(w.Rootpath, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-	//	adminRunner = p.InstantiateChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Orderer, w.Deployment.Channel, w.Deployment.InitArgs, w.Deployment.Policy)
-	//	adminProcess := ifrit.Invoke(adminRunner)
-	//	Eventually(adminProcess.Ready(), 2*time.Second).Should(BeClosed())
-	//	Eventually(adminProcess.Wait(), 10*time.Second).ShouldNot(Receive(BeNil()))
-	//
-	//	listInstantiated := func() bool {
-	//		adminPeer = components.Peer()
-	//		adminPeer.ConfigDir = peer.ConfigDir
-	//		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-	//		adminRunner = adminPeer.ChaincodeListInstantiated(w.Deployment.Channel)
-	//		err := execute(adminRunner)
-	//		if err != nil {
-	//			return false
-	//		}
-	//		return strings.Contains(string(adminRunner.Buffer().Contents()), "Path: simple/cmd")
-	//	}
+	fmt.Println("===============Instantiating Chaincode================")
+	p = w.Components.Peer()
+	p.ConfigDir = filepath.Join(w.Rootpath, "org1.example.com_0")
+	p.LogLevel = "debug"
+	p.MSPConfigPath = filepath.Join(w.Rootpath, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+	adminRunner = p.InstantiateChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Orderer, w.Deployment.Channel, w.Deployment.InitArgs, w.Deployment.Policy)
+	adminProcess := ifrit.Invoke(adminRunner)
+	Eventually(adminProcess.Ready(), 2*time.Second).Should(BeClosed())
+	Eventually(adminProcess.Wait(), 10*time.Second).ShouldNot(Receive(BeNil()))
+
+	listInstantiated := func() bool {
+		p = w.Components.Peer()
+		p.ConfigDir = filepath.Join(w.Rootpath, "org1.example.com_0")
+		p.MSPConfigPath = filepath.Join(w.Rootpath, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner = p.ChaincodeListInstantiated(w.Deployment.Channel)
+		err := execute(adminRunner)
+		if err != nil {
+			return false
+		}
+		return strings.Contains(string(adminRunner.Buffer().Contents()), fmt.Sprintf("Path: %s", w.Deployment.Chaincode.Path))
+	}
+	Eventually(listInstantiated, 30*time.Second, 500*time.Millisecond).Should(BeTrue())
+
 	return nil
 }
