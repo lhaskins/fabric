@@ -45,6 +45,7 @@ type Kafka struct {
 	KafkaBrokerID                     int
 	KafkaZookeeperConnect             string
 	KafkaReplicaFetchResponseMaxBytes int
+	KafkaAdvertisedListeners          string
 	LogLevel                          string
 
 	ErrorStream  io.Writer
@@ -140,6 +141,15 @@ func (k *Kafka) Run(sigCh <-chan os.Signal, ready chan<- struct{}) error {
 			fmt.Sprintf("KAFKA_BROKER_ID=%d", k.KafkaBrokerID),
 			fmt.Sprintf("KAFKA_ZOOKEEPER_CONNECT=%s", k.KafkaZookeeperConnect),
 			fmt.Sprintf("KAFKA_REPLICA_FETCH_RESPONSE_MAX_BYTES=%d", k.KafkaReplicaFetchResponseMaxBytes),
+
+			//			fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=EXTERNAL://localhost:%d,REPLICATION://%s:9093", k.HostPort, k.Name),
+			//                        "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=EXTERNAL:PLAINTEXT,REPLICATION:PLAINTEXT",
+			//		        "KAFKA_LISTENERS=EXTERNAL://0.0.0.0:9092,REPLICATION://0.0.0.0:9093",
+			//                        "KAFKA_INTER_BROKER_LISTENER_NAME=REPLICATION",
+			fmt.Sprintf("KAFKA_ADVERTISED_LISTENERS=http://localhost:%d,%s://%s:9093", k.HostPort, k.NetworkName, k.Name),
+			fmt.Sprintf("KAFKA_LISTENERS=http://0.0.0.0:9092,%s://0.0.0.0:9093", k.NetworkName),
+			fmt.Sprintf("KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=http:PLAINTEXT,%s:PLAINTEXT", k.NetworkName),
+			fmt.Sprintf("KAFKA_INTER_BROKER_LISTENER_NAME=%s", k.NetworkName),
 		},
 	}
 

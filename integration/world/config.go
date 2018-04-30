@@ -214,7 +214,6 @@ func (w *World) ordererNetwork() {
 				w.RunningContainer = append(w.RunningContainer, z)
 			}
 
-			time.Sleep(2 * time.Second)
 			for id := 1; id <= orderer.BrokerCount; id++ {
 				k := w.Components.Kafka(id, w.Network)
 				localKafkaAddress := w.Profiles[w.OrdererOrgs.Profile].Orderer.Kafka.Brokers[id-1]
@@ -222,6 +221,7 @@ func (w *World) ordererNetwork() {
 				Expect(err).NotTo(HaveOccurred())
 				k.KafkaMinInsyncReplicas = orderer.KafkaMinInsyncReplicas
 				k.KafkaDefaultReplicationFactor = orderer.KafkaDefaultReplicationFactor
+				k.KafkaAdvertisedListeners = localKafkaAddress
 				k.KafkaZookeeperConnect = strings.Join(zookeepers, ",")
 				k.LogLevel = "debug"
 				err = k.Start()
@@ -300,10 +300,6 @@ func (w *World) SetupChannel() error {
 	}
 
 	fmt.Println("===============Instantiating Chaincode================")
-	p = w.Components.Peer()
-	p.ConfigDir = filepath.Join(w.Rootpath, "org1.example.com_0")
-	p.LogLevel = "debug"
-	p.MSPConfigPath = filepath.Join(w.Rootpath, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
 	adminRunner = p.InstantiateChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Orderer, w.Deployment.Channel, w.Deployment.InitArgs, w.Deployment.Policy)
 	adminProcess := ifrit.Invoke(adminRunner)
 	Eventually(adminProcess.Ready(), 2*time.Second).Should(BeClosed())

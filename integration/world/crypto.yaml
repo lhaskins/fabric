@@ -1,0 +1,35 @@
+
+OrdererOrgs:
+  - Name: ExampleCom
+    Domain: example.com
+    CA:
+        Country: US
+        Province: California
+        Locality: San Francisco
+    Specs: 
+      - Hostname: orderer0
+
+PeerOrgs: 
+  - Name: Org1ExampleCom
+    Domain: org1.example.com
+    EnableNodeOUs: true
+    CA:
+        Country: US
+        Province: California
+        Locality: San Francisco
+    Template:
+      Count: 2
+    Users:
+      Count: 2
+
+  - Name: Org2ExampleCom
+    Domain: org2.example.com
+    EnableNodeOUs: true
+    CA:
+        Country: US
+        Province: California
+        Locality: San Francisco
+    Template:
+      Count: 2
+    Users:
+      Count: 2

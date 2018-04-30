@@ -1,0 +1,107 @@
+Profiles:
+  TwoOrgsChannel:
+    Consortium: MyConsortium
+    Application:
+      Organizations:
+      - Name: Org1ExampleCom
+        ID: Org1ExampleCom
+        MSPDir: crypto/peerOrganizations/org1.example.com/msp
+        MSPType: ""
+        Policies: {}
+        AnchorPeers:
+        - Host: peer0.org1.example.com
+          Port: 7051
+        AdminPrincipal: ""
+      - Name: Org2ExampleCom
+        ID: Org2ExampleCom
+        MSPDir: crypto/peerOrganizations/org2.example.com/msp
+        MSPType: ""
+        Policies: {}
+        AnchorPeers:
+        - Host: peer0.org2.example.com
+          Port: 7051
+        AdminPrincipal: ""
+      Capabilities:
+        V1_2: true
+      Resources: null
+      Policies: {}
+      ACLs: {}
+    Orderer: null
+    Consortiums: {}
+    Capabilities:
+      V1_1: true
+    Policies: {}
+  TwoOrgsOrdererGenesis:
+    Consortium: ""
+    Application:
+      Organizations:
+      - Name: ExampleCom
+        ID: ExampleCom
+        MSPDir: crypto/ordererOrganizations/example.com/orderers/orderer0.example.com/msp
+        MSPType: ""
+        Policies: {}
+        AnchorPeers: []
+        AdminPrincipal: ""
+      Capabilities:
+        V1_2: true
+      Resources: null
+      Policies: {}
+      ACLs: {}
+    Orderer:
+      OrdererType: solo
+      Addresses:
+      - 0.0.0.0:7050
+      BatchTimeout: 1s
+      BatchSize:
+        MaxMessageCount: 1
+        AbsoluteMaxBytes: 102760448
+        PreferredMaxBytes: 524288
+      Kafka:
+        Brokers:
+        - 127.0.0.1:9092
+        - 127.0.0.1:8092
+        - 127.0.0.1:7092
+        - 127.0.0.1:6092
+      Organizations:
+      - Name: ExampleCom
+        ID: ExampleCom
+        MSPDir: crypto/ordererOrganizations/example.com/orderers/orderer0.example.com/msp
+        MSPType: ""
+        Policies: {}
+        AnchorPeers: []
+        AdminPrincipal: ""
+      MaxChannels: 0
+      Capabilities:
+        V1_1: true
+      Policies: {}
+    Consortiums:
+      MyConsortium:
+        Organizations:
+        - Name: ExampleCom
+          ID: ExampleCom
+          MSPDir: crypto/ordererOrganizations/example.com/orderers/orderer0.example.com/msp
+          MSPType: ""
+          Policies: {}
+          AnchorPeers: []
+          AdminPrincipal: ""
+        - Name: Org1ExampleCom
+          ID: Org1ExampleCom
+          MSPDir: crypto/peerOrganizations/org1.example.com/msp
+          MSPType: ""
+          Policies: {}
+          AnchorPeers:
+          - Host: peer0.org1.example.com
+            Port: 7051
+          AdminPrincipal: ""
+        - Name: Org2ExampleCom
+          ID: Org2ExampleCom
+          MSPDir: crypto/peerOrganizations/org2.example.com/msp
+          MSPType: ""
+          Policies: {}
+          AnchorPeers:
+          - Host: peer0.org2.example.com
+            Port: 7051
+          AdminPrincipal: ""
+    Capabilities:
+      V1_1: true
+    Policies: {}

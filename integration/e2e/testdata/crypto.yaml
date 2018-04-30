@@ -1,6 +1,6 @@
 
 OrdererOrgs:
-  - Name: ExampleCom
+  - Name: OrdererMSP
     Domain: example.com
     Specs: 
       - Hostname: orderer0

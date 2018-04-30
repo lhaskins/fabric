@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	docker "github.com/fsouza/go-dockerclient"
 	"github.com/hyperledger/fabric/common/tools/configtxgen/localconfig"
 	"github.com/hyperledger/fabric/integration/runner"
 	"github.com/hyperledger/fabric/integration/world"
@@ -27,10 +28,10 @@ import (
 
 var _ = Describe("EndToEnd", func() {
 	var (
-		testdataDir    string
-		ordererProcess ifrit.Process
-		peerProcess    ifrit.Process
-		peer2Process   ifrit.Process
+		testdataDir string
+		client      *docker.Client
+		network     *docker.Network
+		w           world.World
 	)
 
 	BeforeEach(func() {
@@ -38,65 +39,31 @@ var _ = Describe("EndToEnd", func() {
 
 		testdataDir, err = filepath.Abs("testdata")
 		Expect(err).NotTo(HaveOccurred())
-	})
+		client, err = docker.NewClientFromEnv()
+		Expect(err).NotTo(HaveOccurred())
 
-	AfterEach(func() {
-		if peerProcess != nil {
-			peerProcess.Signal(syscall.SIGTERM)
-		}
-		if peer2Process != nil {
-			peer2Process.Signal(syscall.SIGTERM)
-		}
-		if ordererProcess != nil {
-			ordererProcess.Signal(syscall.SIGTERM)
-		}
-	})
-
-	It("executes a basic solo network with 2 orgs", func() {
-		By("construct crypto")
-		peerProfiles := []*localconfig.Organization{{
+		pOrg := []*localconfig.Organization{{
 			Name:   "Org1",
 			ID:     "Org1MSP",
-			MSPDir: filepath.Join("crypto", "peerOrganizations", "org1.example.com", "peers", "peer0.org1.example.com", "msp"),
+			MSPDir: "crypto/peerOrganizations/org1.example.com/msp",
 			AnchorPeers: []*localconfig.AnchorPeer{{
 				Host: "0.0.0.0",
-				Port: 10051,
+				Port: 7051,
 			}},
 		}, {
 			Name:   "Org2",
 			ID:     "Org2MSP",
-			MSPDir: filepath.Join("crypto", "peerOrganizations", "org2.example.com", "peers", "peer0.org2.example.com", "msp"),
+			MSPDir: "crypto/peerOrganizations/org2.example.com/msp",
 			AnchorPeers: []*localconfig.AnchorPeer{{
 				Host: "0.0.0.0",
-				Port: 11051,
-			},
+				Port: 8051,
 			}},
-		}
-
-		ordererProfiles := []*localconfig.Organization{{
-			Name:   "OrdererOrg",
-			ID:     "OrdererMSP",
-			MSPDir: filepath.Join("crypto", "ordererOrganizations", "example.com", "orderers", "orderer.example.com", "msp"),
 		}}
 
-		deployment := world.Deployment{
-			Channel: "testchannel",
-			Chaincode: world.Chaincode{
-				Name:     "mycc",
-				Version:  "1.0",
-				Path:     filepath.Join("simple", "cmd"),
-				GoPath:   filepath.Join(testdataDir, "chaincode"),
-				ExecPath: os.Getenv("PATH"),
-			},
-			InitArgs: `{"Args":["init","a","100","b","200"]}`,
-			Peers:    []string{"peer0.org1.example.com", "peer0.org2.example.com"},
-			Orderer:  "127.0.0.1:7050",
-			Policy:   `OR ('Org1MSP.member','Org2MSP.member')`,
-		}
-
 		ordererOrgs := world.Organization{
-			Name:   "Orderer",
-			Domain: "example.com",
+			Name:    "OrdererOrg",
+			Domain:  "example.com",
+			Profile: "TwoOrgsOrdererGenesis",
 			Orderers: []world.OrdererConfig{{
 				Name:        "orderer",
 				BrokerCount: 0,
@@ -104,14 +71,15 @@ var _ = Describe("EndToEnd", func() {
 		}
 
 		peerOrgs := world.Organization{
+			Profile: "TwoOrgsChannel",
 			Peers: []world.PeerOrgConfig{{
-				Name:          "Org1",
+				Name:          pOrg[0].Name,
 				Domain:        "org1.example.com",
 				EnableNodeOUs: false,
 				UserCount:     1,
 				PeerCount:     1,
 			}, {
-				Name:          "Org2",
+				Name:          pOrg[1].Name,
 				Domain:        "org2.example.com",
 				EnableNodeOUs: false,
 				UserCount:     1,
@@ -119,260 +87,164 @@ var _ = Describe("EndToEnd", func() {
 			}},
 		}
 
+		oOrg := []*localconfig.Organization{{
+			Name:   ordererOrgs.Name,
+			ID:     "OrdererMSP",
+			MSPDir: filepath.Join("crypto", "ordererOrganizations", "example.com", "orderers", "orderer.example.com", "msp"),
+		}}
+
+		deployment := world.Deployment{
+			SystemChannel: "systestchannel",
+			Channel:       "testchannel",
+			Chaincode: world.Chaincode{
+				Name:     "mycc",
+				Version:  "1.0",
+				Path:     filepath.Join("simple", "cmd"),
+				GoPath:   filepath.Join(testDir, "chaincode"),
+				ExecPath: os.Getenv("PATH"),
+			},
+			InitArgs: `{"Args":["init","a","100","b","200"]}`,
+			Peers:    []string{"peer0.org1.example.com", "peer0.org2.example.com"},
+			Policy:   `OR ('Org1MSP.member','Org2MSP.member')`,
+			Orderer:  "127.0.0.1:7050",
+		}
+
+		peerProfile := localconfig.Profile{
+			Consortium: "SampleConsortium",
+			Application: &localconfig.Application{
+				Organizations: pOrg,
+				Capabilities: map[string]bool{
+					"V1_2": true,
+				},
+			},
+			Capabilities: map[string]bool{
+				"V1_1": true,
+			},
+		}
+
+		orderer := &localconfig.Orderer{
+			BatchTimeout: 1 * time.Second,
+			BatchSize: localconfig.BatchSize{
+				MaxMessageCount:   1,
+				AbsoluteMaxBytes:  (uint32)(98 * 1024 * 1024),
+				PreferredMaxBytes: (uint32)(512 * 1024),
+			},
+			Kafka: localconfig.Kafka{
+				Brokers: []string{
+					"127.0.0.1:9092",
+					"127.0.0.1:8092",
+					"127.0.0.1:7092",
+					"127.0.0.1:6092",
+				},
+			},
+			Organizations: oOrg,
+			OrdererType:   "solo",
+			Addresses:     []string{"0.0.0.0:7050"},
+			Capabilities:  map[string]bool{"V1_1": true},
+		}
+
+		ordererProfile := localconfig.Profile{
+			Application: &localconfig.Application{
+				Organizations: oOrg,
+				Capabilities:  map[string]bool{"V1_2": true}},
+			Orderer: orderer,
+			Consortiums: map[string]*localconfig.Consortium{
+				"SampleConsortium": &localconfig.Consortium{
+					Organizations: append(oOrg, pOrg...),
+				},
+			},
+			Capabilities: map[string]bool{"V1_1": true},
+		}
+
+		profiles := map[string]localconfig.Profile{
+			peerOrgs.Profile:    peerProfile,
+			ordererOrgs.Profile: ordererProfile,
+		}
+
 		crypto := runner.Cryptogen{
 			Config: filepath.Join(testDir, "crypto.yaml"),
 			Output: filepath.Join(testDir, "crypto"),
 		}
 
-		w := world.World{
+		w = world.World{
 			Rootpath:    testDir,
 			Components:  components,
 			Cryptogen:   crypto,
 			Deployment:  deployment,
 			OrdererOrgs: ordererOrgs,
 			PeerOrgs:    peerOrgs,
-			Profiles: map[string]localconfig.Profile{
-				"TwoOrgsChannel": localconfig.Profile{
-					Consortium: "SampleConsortium",
-					Application: &localconfig.Application{
-						Capabilities:  map[string]bool{"V1_2": true},
-						Organizations: peerProfiles,
-					},
-					Capabilities: map[string]bool{"V1_1": true},
-				},
-				"TwoOrgsOrdererGenesis": localconfig.Profile{
-					Application: &localconfig.Application{
-						Organizations: ordererProfiles,
-						Capabilities:  map[string]bool{"V1_2": true},
-					},
-					Orderer: &localconfig.Orderer{
-						BatchTimeout: 1 * time.Second,
-						BatchSize: localconfig.BatchSize{
-							MaxMessageCount:   1,
-							AbsoluteMaxBytes:  (uint32)(98 * 1024 * 1024),
-							PreferredMaxBytes: (uint32)(512 * 1024),
-						},
-						Organizations: ordererProfiles,
-						OrdererType:   "solo",
-						Addresses:     []string{"0.0.0.0:7050"},
-						Capabilities:  map[string]bool{"V1_1": true},
-					},
-					Consortiums: map[string]*localconfig.Consortium{
-						"SampleConsortium": &localconfig.Consortium{
-							Organizations: peerProfiles,
-						},
-					},
-					Capabilities: map[string]bool{"V1_1": true},
-				},
-			},
+			Profiles:    profiles,
+		}
+	})
+
+	AfterEach(func() {
+		// Stop the docker constainers for zookeeper and kafka
+		for _, cont := range w.RunningContainer {
+			cont.Stop()
 		}
 
-		err := w.BootstrapNetwork()
-		//		w.Construct(testDir)
-		Expect(filepath.Join(testDir, "configtx.yaml")).To(BeARegularFile())
-		Expect(filepath.Join(testDir, "crypto.yaml")).To(BeARegularFile())
+		// Stop the running chaincode containers
+		//		allContainers, _ := client.ListContainers(docker.ListContainersOptions{
+		//			All: true,
+		//		})
+		//		if len(allContainers) > 0 {
+		//			for _, container := range allContainers {
+		//				client.RemoveContainer(docker.RemoveContainerOptions{
+		//					ID:    container.ID,
+		//					Force: true,
+		//				})
+		//			}
+		//		}
 
-		//		By("generating crypto")
-		//		cryptogen := components.Cryptogen()
-		//		cryptogen.Config = filepath.Join(testDir, "crypto.yaml")
-		//		cryptogen.Output = filepath.Join(testDir, "crypto")
-		//		r := cryptogen.Generate()
-		//		execute(r)
-		Expect(filepath.Join(testDir, "crypto", "peerOrganizations")).To(BeADirectory())
-		Expect(filepath.Join(testDir, "crypto", "ordererOrganizations")).To(BeADirectory())
-		//
-		//		By("building the orderer block")
-		//		configtxgen := components.ConfigTxGen()
-		//		configtxgen.ConfigDir = testDir
-		//		configtxgen.ChannelID = "systestchannel"
-		//		configtxgen.Profile = "TwoOrgsOrdererGenesis"
-		//		configtxgen.Output = filepath.Join(testDir, "systestchannel.block")
-		//		r = configtxgen.OutputBlock()
-		//		execute(r)
-		Expect(filepath.Join(testDir, "systestchannel.block")).To(BeARegularFile())
-		//
-		//		By("building the channel transaction file")
-		//		configtxgen.Profile = "TwoOrgsChannel"
-		//		configtxgen.ChannelID = w.Deployment.Channel
-		//		configtxgen.Output = filepath.Join(testDir, "testchannel.tx")
-		//		r = configtxgen.OutputCreateChannelTx()
-		//		execute(r)
-		Expect(filepath.Join(testDir, "testchannel.tx")).To(BeARegularFile())
-		//
-		//		By("building the channel transaction file for Org1 anchor peer")
-		//		configtxgen.Profile = "TwoOrgsChannel"
-		//		configtxgen.Output = filepath.Join(testDir, "Org1MSPanchors.tx")
-		//		configtxgen.AsOrg = "Org1"
-		//		r = configtxgen.OutputAnchorPeersUpdate()
-		//		execute(r)
-		Expect(filepath.Join(testDir, "Org1MSPanchors.tx")).To(BeARegularFile())
-		//
-		//		By("building the channel transaction file for Org2 anchor peer")
-		//		configtxgen.Profile = "TwoOrgsChannel"
-		//		configtxgen.Output = filepath.Join(testDir, "Org2MSPanchors.tx")
-		//		configtxgen.AsOrg = "Org2"
-		//		r = configtxgen.OutputAnchorPeersUpdate()
-		//		execute(r)
-		Expect(filepath.Join(testDir, "Org2MSPanchors.tx")).To(BeARegularFile())
-
-		By("starting a network with a solo orderer")
-		copyFile(filepath.Join("testdata", "orderer.yaml"), filepath.Join(testDir, "orderer.yaml"))
-		for _, peerOrg := range w.PeerOrgs.Peers {
-			for peer := 0; peer < peerOrg.PeerCount; peer++ {
-				err = os.Mkdir(filepath.Join(testDir, fmt.Sprintf("%s_%d", peerOrg.Domain, peer)), 0755)
-				Expect(err).NotTo(HaveOccurred())
-				copyFile(filepath.Join("testdata", fmt.Sprintf("%s_%d-core.yaml", peerOrg.Domain, peer)), filepath.Join(testDir, fmt.Sprintf("%s_%d/core.yaml", peerOrg.Domain, peer)))
+		// Remove chaincode image
+		filters := map[string][]string{}
+		filters["label"] = []string{fmt.Sprintf("org.hyperledger.fabric.chaincode.id.name=%s", w.Deployment.Chaincode.Name)}
+		images, _ := client.ListImages(docker.ListImagesOptions{
+			Filters: filters,
+		})
+		if len(images) > 0 {
+			for _, image := range images {
+				client.RemoveImage(image.ID)
 			}
 		}
+
+		// Stop the orderers and peers
+		for _, localProc := range w.RunningLocalProcess {
+			localProc.Signal(syscall.SIGTERM)
+		}
+
+		// Remove any started networks
+		if network != nil {
+			client.RemoveNetwork(network.Name)
+		}
+	})
+
+	FIt("executes a basic solo network with 2 orgs", func() {
+		By("Generate files to bootstrap the network")
+		err := w.BootstrapNetwork()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(filepath.Join(testDir, "configtx.yaml")).To(BeARegularFile())
+		Expect(filepath.Join(testDir, "crypto.yaml")).To(BeARegularFile())
+		Expect(filepath.Join(testDir, "crypto", "peerOrganizations")).To(BeADirectory())
+		Expect(filepath.Join(testDir, "crypto", "ordererOrganizations")).To(BeADirectory())
+		Expect(filepath.Join(testDir, "systestchannel.block")).To(BeARegularFile())
+		Expect(filepath.Join(testDir, "testchannel.tx")).To(BeARegularFile())
+		Expect(filepath.Join(testDir, "Org1_anchors.tx")).To(BeARegularFile())
+		Expect(filepath.Join(testDir, "Org2_anchors.tx")).To(BeARegularFile())
+
+		By("Setup directories for the network")
+		copyFile(filepath.Join("testdata", "orderer.yaml"), filepath.Join(testDir, "orderer.yaml"))
+		copyPeerConfigs(w.PeerOrgs.Peers, w.Rootpath)
+
+		By("Build Network")
 		w.BuildNetwork()
 
-		//		By("starting a zookeeper")
-		//		zookeeper := components.Zookeeper(0)
-		//		err = zookeeper.Start()
-		//		Expect(err).NotTo(HaveOccurred())
-		//		defer zookeeper.Stop()
-		//
-		//		//		Eventually(outBuffer1, 30*time.Second).Should(gbytes.Say(`\QWooooo Eeeeeee Ooo Ah Ah Bing Bang Walla Walla Bing Bang\E`))
-		//
-		//		By("starting a solo orderer")
-		//		orderer := components.Orderer()
-		//		copyFile(filepath.Join(testdataDir, "core.yaml"), filepath.Join(testDir, "core.yaml"))
-		//		copyFile(filepath.Join(testdataDir, "orderer.yaml"), filepath.Join(testDir, "orderer.yaml"))
-		//		orderer.ConfigDir = testDir
-		//		//		orderer.OrdererType = "solo"
-		//		//		orderer.OrdererHome = testDir
-		//		//		orderer.ListenAddress = "0.0.0.0"
-		//		//		orderer.ListenPort = "7050"
-		//		orderer.LedgerLocation = testDir
-		//		//		orderer.GenesisProfile = "TwoOrgsOrdererGenesis"
-		//		//		orderer.GenesisMethod = "file"
-		//		//		orderer.GenesisFile = filepath.Join(testDir, "systestchannel.block")
-		//		//		orderer.LocalMSPId = "OrdererMSP"
-		//		//		orderer.LocalMSPDir = filepath.Join(testDir, "crypto", "ordererOrganizations", "example.com", "orderers", "orderer.example.com", "msp")
-		//		orderer.LogLevel = "debug"
-		//		ordererProcess = ifrit.Invoke(orderer.New())
-		//		Eventually(ordererProcess.Ready()).Should(BeClosed())
-		//		Consistently(ordererProcess.Wait()).ShouldNot(Receive())
-		//
-		//		By("starting a peer for Org1")
-		//		peer := components.Peer()
-		//		peer.ConfigDir = testDir
-		//		//		peer.LocalMSPID = "Org1MSP"
-		//		//		peer.PeerID = "peer0.org1.example.com"
-		//		//		peer.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		//		//		peer.PeerAddress = "0.0.0.0:7051"
-		//		//		peer.PeerListenAddress = "0.0.0.0:10051"
-		//		//		peer.ProfileEnabled = "true"
-		//		//		peer.ProfileListenAddress = "0.0.0.0:6060"
-		//		//		peer.FileSystemPath = filepath.Join(testDir, "peer1")
-		//		//		peer.PeerGossipBootstrap = "0.0.0.0:10051"
-		//		//		peer.PeerGossipEndpoint = "0.0.0.0:10051"
-		//		//		peer.PeerGossipExternalEndpoint = "0.0.0.0:10051"
-		//		//		peer.PeerGossipOrgLeader = "false"
-		//		//		peer.PeerGossipUseLeaderElection = "true"
-		//		//		peer.PeerEventsAddress = "0.0.0.0:10052"
-		//		// peer.PeerChaincodeAddress = "0.0.0.0:10051"
-		//		peer.PeerChaincodeListenAddress = "0.0.0.0:7053"
-		//		peerProcess = ifrit.Invoke(peer.NodeStart())
-		//		Eventually(peerProcess.Ready()).Should(BeClosed())
-		//		Consistently(peerProcess.Wait()).ShouldNot(Receive())
-		//
-		//		By("starting a peer for Org2")
-		//		peer2 := components.Peer()
-		//		peer2.ConfigDir = testDir
-		//		peer2.LocalMSPID = "Org2MSP"
-		//		peer2.PeerID = "peer0.org2.example.com"
-		//		peer2.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org2.example.com", "users", "Admin@org2.example.com", "msp")
-		//		peer2.PeerAddress = "0.0.0.0:8051"
-		//		peer2.PeerListenAddress = "0.0.0.0:11051"
-		//		peer2.ProfileEnabled = "true"
-		//		peer2.ProfileListenAddress = "0.0.0.0:8060"
-		//		peer2.FileSystemPath = filepath.Join(testDir, "peer2")
-		//		peer2.PeerGossipBootstrap = "0.0.0.0:11051"
-		//		peer2.PeerGossipEndpoint = "0.0.0.0:11051"
-		//		peer2.PeerGossipOrgLeader = "false"
-		//		peer2.PeerGossipUseLeaderElection = "true"
-		//		peer2.PeerGossipExternalEndpoint = "0.0.0.0:11051"
-		//		peer2.PeerEventsAddress = "0.0.0.0:11052"
-		//		// peer2.PeerChaincodeAddress = "0.0.0.0:11051"
-		//		peer2.PeerChaincodeListenAddress = "0.0.0.0:8053"
-		//		peer2Process = ifrit.Invoke(peer2.NodeStart())
-		//		Eventually(peer2Process.Ready()).Should(BeClosed())
-		//		Consistently(peer2Process.Wait()).ShouldNot(Receive())
-
-		By("Setup channel")
-		copyDir(filepath.Join("..", "e2e", "testdata", "chaincode"), filepath.Join(testDir, "chaincode"))
+		By("Setup Channel")
+		copyDir(filepath.Join("testdata", "chaincode"), filepath.Join(testDir, "chaincode"))
 		err = w.SetupChannel()
 		Expect(err).NotTo(HaveOccurred())
 
-		//		By("create channel")
-		//		adminPeer := components.Peer()
-		//		adminPeer.ConfigDir = peer.ConfigDir
-		//		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		//		adminRunner := adminPeer.CreateChannel(w.Deployment.Channel, filepath.Join(testDir, "testchannel.tx"))
-		//		execute(adminRunner)
-		//		Eventually(ordererRunner.Err(), 5*time.Second).Should(gbytes.Say("Created and starting new chain testchannel"))
-		//
-		//		By("fetch genesis block on peer for Org1")
-		//		adminPeer = components.Peer()
-		//		adminPeer.ConfigDir = peer.ConfigDir
-		//		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		//		adminRunner = adminPeer.FetchChannel(w.Deployment.Channel, filepath.Join(testDir, "peer1", "testchannel.block"), "0")
-		//		execute(adminRunner)
-		//		Expect(filepath.Join(testDir, "peer1", "testchannel.block")).To(BeARegularFile())
-		//
-		//		By("fetch genesis block on peer for Org2")
-		//		adminPeer2 := components.Peer()
-		//		adminPeer2.ConfigDir = peer2.ConfigDir
-		//		adminPeer2.MSPConfigPath = filepath.Join(testDir, "peer2", "crypto", "peerOrganizations", "org2.example.com", "users", "Admin@org2.example.com", "msp")
-		//		adminRunner2 := adminPeer2.FetchChannel(w.Deployment.Channel, filepath.Join(testDir, "peer2", "testchannel.block"), "0")
-		//		execute(adminRunner2)
-		//		Expect(filepath.Join(testDir, "peer2", "testchannel.block")).To(BeARegularFile())
-		//
-		//		By("join channel for Org1")
-		//		adminPeer = components.Peer()
-		//		adminPeer.ConfigDir = peer.ConfigDir
-		//		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		//		adminRunner = adminPeer.JoinChannel(filepath.Join(testDir, "peer1", "testchannel.block"))
-		//		execute(adminRunner)
-		//		Eventually(adminRunner.Err(), 5*time.Second).Should(gbytes.Say("Successfully submitted proposal to join channel"))
-		//
-		//		By("join channel for Org2")
-		//		adminPeer2 = components.Peer()
-		//		adminPeer2.ConfigDir = peer2.ConfigDir
-		//		adminPeer2.MSPConfigPath = filepath.Join(testDir, "peer2", "crypto", "peerOrganizations", "org2.example.com", "users", "Admin@org2.example.com", "msp")
-		//		adminRunner2 = adminPeer2.JoinChannel(filepath.Join(testDir, "peer2", "testchannel.block"))
-		//		execute(adminRunner2)
-		//		Eventually(adminRunner2.Err(), 5*time.Second).Should(gbytes.Say("Successfully submitted proposal to join channel"))
-		//
-		//		By("installs chaincode for peer1")
-		//		adminPeer = components.Peer()
-		//		adminPeer.ConfigDir = peer.ConfigDir
-		//		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		//		adminPeer.ExecPath = w.Deployment.Chaincode.ExecPath
-		//		adminPeer.GoPath = w.Deployment.Chaincode.GoPath
-		//		adminRunner = adminPeer.InstallChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Chaincode.Path)
-		//		execute(adminRunner)
-		//		Eventually(peerNodeRunner.Err(), 5*time.Second).Should(gbytes.Say(`\QInstalled Chaincode [mycc] Version [1.0] to peer\E`))
-		//
-		//		By("installs chaincode for peer2")
-		//		adminPeer2 = components.Peer()
-		//		adminPeer2.ConfigDir = peer2.ConfigDir
-		//		adminPeer2.MSPConfigPath = filepath.Join(testDir, "peer2", "crypto", "peerOrganizations", "org2.example.com", "users", "Admin@org2.example.com", "msp")
-		//		adminPeer2.ExecPath = w.Deployment.Chaincode.ExecPath
-		//		adminPeer2.GoPath = w.Deployment.Chaincode.GoPath
-		//		adminRunner2 = adminPeer2.InstallChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Chaincode.Path)
-		//		execute(adminRunner2)
-		//		Eventually(peer2NodeRunner.Err(), 5*time.Second).Should(gbytes.Say(`\QInstalled Chaincode [mycc] Version [1.0] to peer\E`))
-		//
-		//		By("instantiate chaincode")
-		//		adminPeer = components.Peer()
-		//		adminPeer.ConfigDir = peer.ConfigDir
-		//		adminPeer.MSPConfigPath = filepath.Join(testDir, "peer1", "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		//		adminRunner = adminPeer.InstantiateChaincode(w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version, w.Deployment.Orderer, w.Deployment.Channel, w.Deployment.InitArgs, w.Deployment.Policy)
-		//		adminProcess := ifrit.Invoke(adminRunner)
-		//		Eventually(adminProcess.Ready(), 2*time.Second).Should(BeClosed())
-		//		Eventually(adminProcess.Wait(), 5*time.Second).ShouldNot(Receive(BeNil()))
+		//Eventually(outBuffer1, 30*time.Second).Should(gbytes.Say(`\QWooooo Eeeeeee Ooo Ah Ah Bing Bang Walla Walla Bing Bang\E`))
 
 		By("Verify chaincode installed")
 		adminPeer := components.Peer()
@@ -384,10 +256,10 @@ var _ = Describe("EndToEnd", func() {
 
 		By("Wait for chaincode to complete instantiation")
 		listInstantiated := func() bool {
-			adminPeer = components.Peer()
+			adminPeer := components.Peer()
 			adminPeer.ConfigDir = filepath.Join(testDir, "org1.example.com_0")
 			adminPeer.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-			adminRunner = adminPeer.ChaincodeListInstantiated(w.Deployment.Channel)
+			adminRunner := adminPeer.ChaincodeListInstantiated(w.Deployment.Channel)
 			err := execute(adminRunner)
 			if err != nil {
 				return false
@@ -424,9 +296,53 @@ var _ = Describe("EndToEnd", func() {
 		adminPeer = components.Peer()
 		adminPeer.ConfigDir = filepath.Join(testDir, "org1.example.com_0")
 		adminPeer.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		adminRunner = adminPeer.UpdateChannel(filepath.Join(testDir, "Org1MSPanchors.tx"), w.Deployment.Channel, w.Deployment.Orderer)
+		adminRunner = adminPeer.UpdateChannel(filepath.Join(testDir, "Org1_anchors.tx"), w.Deployment.Channel, w.Deployment.Orderer)
 		execute(adminRunner)
 		Eventually(adminRunner.Err()).Should(gbytes.Say("Successfully submitted channel update"))
+	})
+
+	It("tests ACL - Happy Path", func() {
+		//w.ACL=
+		err := w.BootstrapNetwork()
+		Expect(err).NotTo(HaveOccurred())
+
+		By("Setup directories for the network")
+		copyFile(filepath.Join("testdata", "orderer.yaml"),
+			filepath.Join(testDir, "orderer.yaml"))
+		copyPeerConfigs(w.PeerOrgs.Peers, w.Rootpath)
+
+		By("Build Network")
+		w.BuildNetwork()
+
+		By("Setup Channel")
+		copyDir(filepath.Join("testdata", "chaincode"), filepath.Join(testDir, "chaincode"))
+		err = w.SetupChannel()
+		Expect(err).NotTo(HaveOccurred())
+
+		By("query chaincode")
+		adminPeer := components.Peer()
+		adminPeer.ConfigDir = filepath.Join(testDir, "org1.example.com_0")
+		adminPeer.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		adminRunner := adminPeer.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
+		execute(adminRunner)
+		Eventually(adminRunner.Buffer()).Should(gbytes.Say("100"))
+
+		By("invoke chaincode")
+		adminRunner = adminPeer.InvokeChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["invoke","a","b","10"]}`, w.Deployment.Orderer)
+		execute(adminRunner)
+		Eventually(adminRunner.Err()).Should(gbytes.Say("Chaincode invoke successful. result: status:200"))
+
+		By("query chaincode again")
+		adminRunner = adminPeer.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
+		execute(adminRunner)
+		Eventually(adminRunner.Buffer()).Should(gbytes.Say("90"))
+
+	})
+
+	It("tests ACL - Unauthorized User", func() {
+		err := w.BootstrapNetwork()
+		Expect(err).NotTo(HaveOccurred())
+
 	})
 })
 
@@ -435,13 +351,6 @@ func copyFile(src, dest string) {
 	Expect(err).NotTo(HaveOccurred())
 	err = ioutil.WriteFile(dest, data, 0775)
 	Expect(err).NotTo(HaveOccurred())
-}
-
-func execute(r ifrit.Runner) (err error) {
-	p := ifrit.Invoke(r)
-	Eventually(p.Ready()).Should(BeClosed())
-	Eventually(p.Wait()).Should(Receive(&err))
-	return err
 }
 
 func copyDir(src, dest string) {
@@ -458,4 +367,25 @@ func copyDir(src, dest string) {
 		}
 	}
 	Expect(err).NotTo(HaveOccurred())
+}
+
+func execute(r ifrit.Runner) (err error) {
+	p := ifrit.Invoke(r)
+	Eventually(p.Ready()).Should(BeClosed())
+	Eventually(p.Wait(), 10*time.Second).Should(Receive(&err))
+	return err
+}
+
+func copyPeerConfigs(peerOrgs []world.PeerOrgConfig, rootPath string) {
+	for _, peerOrg := range peerOrgs {
+		for peer := 0; peer < peerOrg.PeerCount; peer++ {
+			peerDir := fmt.Sprintf("%s_%d", peerOrg.Domain, peer)
+			err := os.Mkdir(filepath.Join(rootPath, peerDir), 0755)
+			Expect(err).NotTo(HaveOccurred())
+			copyFile(filepath.Join("testdata",
+				fmt.Sprintf("%s-core.yaml", peerDir)),
+				filepath.Join(rootPath,
+					fmt.Sprintf("%s/core.yaml", peerDir)))
+		}
+	}
 }
