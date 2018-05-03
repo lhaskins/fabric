@@ -184,17 +184,17 @@ var _ = Describe("EndToEnd", func() {
 		}
 
 		// Stop the running chaincode containers
-		//		allContainers, _ := client.ListContainers(docker.ListContainersOptions{
-		//			All: true,
-		//		})
-		//		if len(allContainers) > 0 {
-		//			for _, container := range allContainers {
-		//				client.RemoveContainer(docker.RemoveContainerOptions{
-		//					ID:    container.ID,
-		//					Force: true,
-		//				})
-		//			}
-		//		}
+		allContainers, _ := client.ListContainers(docker.ListContainersOptions{
+			All: true,
+		})
+		if len(allContainers) > 0 {
+			for _, container := range allContainers {
+				client.RemoveContainer(docker.RemoveContainerOptions{
+					ID:    container.ID,
+					Force: true,
+				})
+			}
+		}
 
 		// Remove chaincode image
 		filters := map[string][]string{}
@@ -219,7 +219,7 @@ var _ = Describe("EndToEnd", func() {
 		}
 	})
 
-	FIt("executes a basic solo network with 2 orgs", func() {
+	It("executes a basic solo network with 2 orgs", func() {
 		By("Generate files to bootstrap the network")
 		err := w.BootstrapNetwork()
 		Expect(err).NotTo(HaveOccurred())
@@ -270,6 +270,7 @@ var _ = Describe("EndToEnd", func() {
 
 		By("query chaincode")
 		adminPeer = components.Peer()
+		adminPeer.LogLevel = "debug"
 		adminPeer.ConfigDir = filepath.Join(testDir, "org1.example.com_0")
 		adminPeer.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
 		adminRunner = adminPeer.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
@@ -277,17 +278,11 @@ var _ = Describe("EndToEnd", func() {
 		Eventually(adminRunner.Buffer()).Should(gbytes.Say("100"))
 
 		By("invoke chaincode")
-		adminPeer = components.Peer()
-		adminPeer.ConfigDir = filepath.Join(testDir, "org1.example.com_0")
-		adminPeer.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
 		adminRunner = adminPeer.InvokeChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["invoke","a","b","10"]}`, w.Deployment.Orderer)
 		execute(adminRunner)
 		Eventually(adminRunner.Err()).Should(gbytes.Say("Chaincode invoke successful. result: status:200"))
 
-		By("query chaincode")
-		adminPeer = components.Peer()
-		adminPeer.ConfigDir = filepath.Join(testDir, "org1.example.com_0")
-		adminPeer.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		By("query chaincode again")
 		adminRunner = adminPeer.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
 		execute(adminRunner)
 		Eventually(adminRunner.Buffer()).Should(gbytes.Say("90"))
@@ -301,8 +296,8 @@ var _ = Describe("EndToEnd", func() {
 		Eventually(adminRunner.Err()).Should(gbytes.Say("Successfully submitted channel update"))
 	})
 
-	It("tests ACL - Happy Path", func() {
-		w.Profiles["TwoOrgsOrdererGenesis"].Application.ACLs=map[string]string{}
+	FIt("tests ACL - Happy Path", func() {
+		w.Profiles["TwoOrgsOrdererGenesis"].Application.ACLs = map[string]string{}
 
 		err := w.BootstrapNetwork()
 		Expect(err).NotTo(HaveOccurred())
@@ -320,21 +315,31 @@ var _ = Describe("EndToEnd", func() {
 		err = w.SetupChannel()
 		Expect(err).NotTo(HaveOccurred())
 
-		By("query chaincode")
+		By("Verify instantiation")
 		adminPeer := components.Peer()
 		adminPeer.ConfigDir = filepath.Join(testDir, "org1.example.com_0")
 		adminPeer.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		adminRunner := adminPeer.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
+		instantiateRunner := adminPeer.ChaincodeListInstantiated(w.Deployment.Channel)
+		err = execute(instantiateRunner)
+		Eventually(instantiateRunner.Buffer(), 5*time.Second, 500*time.Millisecond).Should(gbytes.Say("Path: simple/cmd"))
+
+		//		time.Sleep(10*time.Second)
+
+		By("query chaincode")
+		adminPeer2 := components.Peer()
+		adminPeer2.ConfigDir = filepath.Join(testDir, "org2.example.com_0")
+		adminPeer2.MSPConfigPath = filepath.Join(testDir, "crypto", "peerOrganizations", "org2.example.com", "users", "Admin@org2.example.com", "msp")
+		adminRunner := adminPeer2.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
 		execute(adminRunner)
 		Eventually(adminRunner.Buffer()).Should(gbytes.Say("100"))
 
 		By("invoke chaincode")
-		adminRunner = adminPeer.InvokeChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["invoke","a","b","10"]}`, w.Deployment.Orderer)
+		adminRunner = adminPeer2.InvokeChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["invoke","a","b","10"]}`, w.Deployment.Orderer)
 		execute(adminRunner)
 		Eventually(adminRunner.Err()).Should(gbytes.Say("Chaincode invoke successful. result: status:200"))
 
 		By("query chaincode again")
-		adminRunner = adminPeer.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
+		adminRunner = adminPeer2.QueryChaincode(w.Deployment.Chaincode.Name, w.Deployment.Channel, `{"Args":["query","a"]}`)
 		execute(adminRunner)
 		Eventually(adminRunner.Buffer()).Should(gbytes.Say("90"))
 
@@ -374,6 +379,7 @@ func execute(r ifrit.Runner) (err error) {
 	p := ifrit.Invoke(r)
 	Eventually(p.Ready()).Should(BeClosed())
 	Eventually(p.Wait(), 10*time.Second).Should(Receive(&err))
+	//Eventually(p.Wait()).Should(Receive(&err))
 	return err
 }
 

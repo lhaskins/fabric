@@ -9,7 +9,7 @@ package runner_test
 import (
 	"fmt"
 	"io/ioutil"
-	"os"
+	//"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
@@ -85,10 +85,13 @@ var _ = Describe("Peer", func() {
 		Eventually(ordererProcess.Ready()).Should(BeClosed())
 		Consistently(ordererProcess.Wait()).ShouldNot(Receive())
 
-		err = os.Mkdir(filepath.Join(tempDir, "peer"), 0755)
-		Expect(err).NotTo(HaveOccurred())
-		copyFile(filepath.Join("testdata", "core.yaml"), filepath.Join(tempDir, "peer", "core.yaml"))
-		peer.ConfigDir = filepath.Join(tempDir, "peer")
+//		err = os.Mkdir(filepath.Join(tempDir, "peer"), 0755)
+//		Expect(err).NotTo(HaveOccurred())
+//		copyFile(filepath.Join("testdata", "core.yaml"), filepath.Join(tempDir, "peer", "core.yaml"))
+//		peer.ConfigDir = filepath.Join(tempDir, "peer")
+
+		copyFile(filepath.Join("testdata", "core.yaml"), filepath.Join(tempDir, "core.yaml"))
+		peer.ConfigDir = tempDir
 	})
 
 	AfterEach(func() {
@@ -133,9 +136,11 @@ var _ = Describe("Peer", func() {
 		By("fetch channel")
 //		err = os.Mkdir(filepath.Join(tempDir, "peer"), 0755)
 		fetchChan := components.Peer()
-		fetchChan.ConfigDir = filepath.Join(tempDir, "peer")
+		//fetchChan.ConfigDir = filepath.Join(tempDir, "peer")
+		fetchChan.ConfigDir = tempDir
 		fetchChan.MSPConfigPath = filepath.Join(cryptoDir, "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
-		fRunner := fetchChan.FetchChannel("mychan", filepath.Join(tempDir, "peer", "mychan.block"), "0")
+		//fRunner := fetchChan.FetchChannel("mychan", filepath.Join(tempDir, "peer", "mychan.block"), "0")
+		fRunner := fetchChan.FetchChannel("mychan", filepath.Join(tempDir, "mychan.block"), "0")
 		err = execute(fRunner)
 		//Expect(err).NotTo(HaveOccurred())
 		Eventually(fRunner.Err(), 5*time.Second).Should(gbytes.Say("Received block: 0"))
