@@ -7,8 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 package runner_test
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -83,8 +85,10 @@ var _ = Describe("Peer", func() {
 		Eventually(ordererProcess.Ready()).Should(BeClosed())
 		Consistently(ordererProcess.Wait()).ShouldNot(Receive())
 
-		copyFile(filepath.Join("testdata", "core.yaml"), filepath.Join(tempDir, "core.yaml"))
-		peer.ConfigDir = tempDir
+		err = os.Mkdir(filepath.Join(tempDir, "peer"), 0755)
+		Expect(err).NotTo(HaveOccurred())
+		copyFile(filepath.Join("testdata", "core.yaml"), filepath.Join(tempDir, "peer", "core.yaml"))
+		peer.ConfigDir = filepath.Join(tempDir, "peer")
 	})
 
 	AfterEach(func() {
@@ -94,10 +98,14 @@ var _ = Describe("Peer", func() {
 		if peerProcess != nil {
 			peerProcess.Signal(syscall.SIGTERM)
 		}
-		os.RemoveAll(tempDir)
+
+		output, err := exec.Command("find", tempDir, "-type", "f").Output()
+		Expect(err).NotTo(HaveOccurred())
+		fmt.Printf("\n---\n%s\n---\n", output)
+		//os.RemoveAll(tempDir)
 	})
 
-	It("starts a peer", func() {
+	FIt("starts a peer", func() {
 		peer.MSPConfigPath = filepath.Join(cryptoDir, "peerOrganizations", "org1.example.com", "peers", "peer0.org1.example.com", "msp")
 		r := peer.NodeStart()
 		peerProcess = ifrit.Invoke(r)
@@ -122,14 +130,30 @@ var _ = Describe("Peer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Eventually(ordererRunner.Err(), 5*time.Second).Should(gbytes.Say("Created and starting new chain mychan"))
 
-		//
-		//		By("join channel")
-		//
-		//		By("installs chaincode")
-		//
-		//		By("instantiate channel")
-		//
-		//		By("query channel")
+		By("fetch channel")
+//		err = os.Mkdir(filepath.Join(tempDir, "peer"), 0755)
+		fetchChan := components.Peer()
+		fetchChan.ConfigDir = filepath.Join(tempDir, "peer")
+		fetchChan.MSPConfigPath = filepath.Join(cryptoDir, "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		fRunner := fetchChan.FetchChannel("mychan", filepath.Join(tempDir, "peer", "mychan.block"), "0")
+		err = execute(fRunner)
+		//Expect(err).NotTo(HaveOccurred())
+		Eventually(fRunner.Err(), 5*time.Second).Should(gbytes.Say("Received block: 0"))
+
+		By("join channel")
+		joinChan := components.Peer()
+		joinChan.ConfigDir = filepath.Join(tempDir, "peer")
+		joinChan.MSPConfigPath = filepath.Join(cryptoDir, "peerOrganizations", "org1.example.com", "users", "Admin@org1.example.com", "msp")
+		jRunner := joinChan.JoinChannel(filepath.Join(tempDir, "peer", "mychan.block"))
+		err = execute(jRunner)
+		//Expect(err).NotTo(HaveOccurred())
+		Eventually(jRunner.Err(), 5*time.Second).Should(gbytes.Say("Successfully submitted proposal to join channel"))
+
+		By("installs chaincode")
+
+		By("instantiate channel")
+
+		By("query channel")
 
 		peerProcess.Signal(syscall.SIGTERM)
 		Eventually(peerProcess.Wait()).Should(Receive(BeNil()))

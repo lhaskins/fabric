@@ -126,8 +126,6 @@ func (p *Peer) UpdateChannel(transactionFile string, channel string, orderer str
 }
 
 func (p *Peer) InstallChaincode(name string, version string, path string) *ginkgomon.Runner {
-	//func (p *Peer) InstallChaincode(w world.World) *ginkgomon.Runner {
-	//cmd := exec.Command(p.Path, "chaincode", "install", "-n", w.Deployment.Chaincode.Name, "-v", w.Deployment.Chaincode.Version, "-p", w.Deployment.Chaincode.Path)
 	cmd := exec.Command(p.Path, "chaincode", "install", "-n", name, "-v", version, "-p", path)
 	p.setupEnvironment(cmd)
 

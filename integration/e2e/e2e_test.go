@@ -302,7 +302,8 @@ var _ = Describe("EndToEnd", func() {
 	})
 
 	It("tests ACL - Happy Path", func() {
-		//w.ACL=
+		w.Profiles["TwoOrgsOrdererGenesis"].Application.ACLs=map[string]string{}
+
 		err := w.BootstrapNetwork()
 		Expect(err).NotTo(HaveOccurred())
 

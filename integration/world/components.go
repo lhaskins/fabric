@@ -61,6 +61,18 @@ func (c *Components) ConfigTxGen() *runner.ConfigTxGen {
 	}
 }
 
+func (c *Components) Orderer() *runner.Orderer {
+	return &runner.Orderer{
+		Path: c.Paths["orderer"],
+	}
+}
+
+func (c *Components) Peer() *runner.Peer {
+	return &runner.Peer{
+		Path: c.Paths["peer"],
+	}
+}
+
 func (c *Components) Zookeeper(id int, network *docker.Network) *runner.Zookeeper {
 	return &runner.Zookeeper{
 		ZooMyID:     id,
@@ -76,18 +88,6 @@ func (c *Components) Kafka(id int, network *docker.Network) *runner.Kafka {
 		KafkaBrokerID: id,
 		NetworkID:     network.ID,
 		NetworkName:   network.Name,
-	}
-}
-
-func (c *Components) Orderer() *runner.Orderer {
-	return &runner.Orderer{
-		Path: c.Paths["orderer"],
-	}
-}
-
-func (c *Components) Peer() *runner.Peer {
-	return &runner.Peer{
-		Path: c.Paths["peer"],
 	}
 }
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	//"os/exec"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 	"time"
@@ -37,10 +37,10 @@ var _ = Describe("Config", func() {
 	})
 
 	AfterEach(func() {
-		//				output, err := exec.Command("find", tempDir, "-type", "f").Output()
-		//				Expect(err).NotTo(HaveOccurred())
-		//				fmt.Printf("\n---\n%s\n---\n", output)
-		os.RemoveAll(tempDir)
+		output, err := exec.Command("find", tempDir, "-type", "f").Output()
+		Expect(err).NotTo(HaveOccurred())
+		fmt.Printf("\n---\n%s\n---\n", output)
+//		os.RemoveAll(tempDir)
 
 		// Stop the docker constainers for zookeeper and kafka
 		for _, cont := range w.RunningContainer {
@@ -277,7 +277,8 @@ var _ = Describe("Config", func() {
 				Profile: "TwoOrgsOrdererGenesis",
 				Orderers: []OrdererConfig{{
 					Name:                          "orderer0",
-					BrokerCount:                   4,
+					//BrokerCount:                   4,
+					BrokerCount:                   0,
 					ZookeeperCount:                1,
 					KafkaMinInsyncReplicas:        2,
 					KafkaDefaultReplicationFactor: 3,
