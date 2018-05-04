@@ -102,13 +102,13 @@ var _ = Describe("Peer", func() {
 			peerProcess.Signal(syscall.SIGTERM)
 		}
 
-		output, err := exec.Command("find", tempDir, "-type", "f").Output()
-		Expect(err).NotTo(HaveOccurred())
-		fmt.Printf("\n---\n%s\n---\n", output)
-		//os.RemoveAll(tempDir)
+		//output, err := exec.Command("find", tempDir, "-type", "f").Output()
+		//Expect(err).NotTo(HaveOccurred())
+		//fmt.Printf("\n---\n%s\n---\n", output)
+		os.RemoveAll(tempDir)
 	})
 
-	FIt("starts a peer", func() {
+	It("starts a peer", func() {
 		peer.MSPConfigPath = filepath.Join(cryptoDir, "peerOrganizations", "org1.example.com", "peers", "peer0.org1.example.com", "msp")
 		r := peer.NodeStart()
 		peerProcess = ifrit.Invoke(r)
