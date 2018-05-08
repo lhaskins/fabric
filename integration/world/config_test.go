@@ -43,11 +43,13 @@ var _ = Describe("Config", func() {
 		os.RemoveAll(tempDir)
 
 		// Stop the docker constainers for zookeeper and kafka
-		for _, cont := range w.RunningContainer {
+		for _, cont := range w.LocalStoppers {
 			cont.Stop()
 		}
 
 		// Stop the running chaincode containers
+		// We should not need to find the chaincode containers to remove. Opened FAB-10044 to track the cleanup of chaincode.
+		// Remove this once this is fixed.
 		filters := map[string][]string{}
 		filters["name"] = []string{fmt.Sprintf("%s-%s", w.Deployment.Chaincode.Name, w.Deployment.Chaincode.Version)}
 		allContainers, _ := client.ListContainers(docker.ListContainersOptions{
@@ -80,7 +82,7 @@ var _ = Describe("Config", func() {
 		}
 
 		// Stop the orderers and peers
-		for _, localProc := range w.RunningLocalProcess {
+		for _, localProc := range w.LocalProcess {
 			localProc.Signal(syscall.SIGTERM)
 		}
 

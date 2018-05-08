@@ -28,17 +28,15 @@ import (
 
 var _ = Describe("EndToEnd", func() {
 	var (
-		testdataDir string
 		client      *docker.Client
 		network     *docker.Network
+		networkName string
 		w           world.World
 	)
 
 	BeforeEach(func() {
 		var err error
 
-		testdataDir, err = filepath.Abs("testdata")
-		Expect(err).NotTo(HaveOccurred())
 		client, err = docker.NewClientFromEnv()
 		Expect(err).NotTo(HaveOccurred())
 
@@ -65,8 +63,9 @@ var _ = Describe("EndToEnd", func() {
 			Domain:  "example.com",
 			Profile: "TwoOrgsOrdererGenesis",
 			Orderers: []world.OrdererConfig{{
-				Name:        "orderer",
-				BrokerCount: 0,
+				Name:           "orderer",
+				BrokerCount:    4,
+				ZookeeperCount: 1,
 			}},
 		}
 
@@ -138,7 +137,7 @@ var _ = Describe("EndToEnd", func() {
 				},
 			},
 			Organizations: oOrg,
-			OrdererType:   "solo",
+			OrdererType:   "kafka",
 			Addresses:     []string{"0.0.0.0:7050"},
 			Capabilities:  map[string]bool{"V1_1": true},
 		}
@@ -146,7 +145,8 @@ var _ = Describe("EndToEnd", func() {
 		ordererProfile := localconfig.Profile{
 			Application: &localconfig.Application{
 				Organizations: oOrg,
-				Capabilities:  map[string]bool{"V1_2": true}},
+				Capabilities:  map[string]bool{"V1_2": true},
+			},
 			Orderer: orderer,
 			Consortiums: map[string]*localconfig.Consortium{
 				"SampleConsortium": &localconfig.Consortium{
@@ -161,6 +161,15 @@ var _ = Describe("EndToEnd", func() {
 			ordererOrgs.Profile: ordererProfile,
 		}
 
+		// Create a network
+		networkName = runner.UniqueName()
+		network, err = client.CreateNetwork(
+			docker.CreateNetworkOptions{
+				Name:   networkName,
+				Driver: "bridge",
+			},
+		)
+
 		crypto := runner.Cryptogen{
 			Config: filepath.Join(testDir, "crypto.yaml"),
 			Output: filepath.Join(testDir, "crypto"),
@@ -171,6 +180,7 @@ var _ = Describe("EndToEnd", func() {
 			Components:  components,
 			Cryptogen:   crypto,
 			Deployment:  deployment,
+			Network:     network,
 			OrdererOrgs: ordererOrgs,
 			PeerOrgs:    peerOrgs,
 			Profiles:    profiles,
@@ -179,7 +189,7 @@ var _ = Describe("EndToEnd", func() {
 
 	AfterEach(func() {
 		// Stop the docker constainers for zookeeper and kafka
-		for _, cont := range w.RunningContainer {
+		for _, cont := range w.LocalStoppers {
 			cont.Stop()
 		}
 
@@ -211,7 +221,7 @@ var _ = Describe("EndToEnd", func() {
 		}
 
 		// Stop the orderers and peers
-		for _, localProc := range w.RunningLocalProcess {
+		for _, localProc := range w.LocalProcess {
 			localProc.Signal(syscall.SIGTERM)
 		}
 

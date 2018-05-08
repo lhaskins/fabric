@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/ioutil"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,23 +49,24 @@ type PeerOrgConfig struct {
 	PeerCount        int
 }
 
-type container interface {
+type Stopper interface {
 	Stop() error
 }
 
 type World struct {
-	Rootpath            string
-	Components          *Components
-	Network             *docker.Network
-	OrdererProfileName  string
-	ChannelProfileName  string
-	OrdererOrgs         []OrdererConfig
-	PeerOrgs            []PeerOrgConfig
-	Profiles            map[string]localconfig.Profile
-	Cryptogen           runner.Cryptogen
-	Deployment          Deployment
-	RunningContainer    []container
-	RunningLocalProcess []ifrit.Process
+	Rootpath           string
+	Components         *Components
+	Network            *docker.Network
+	OrdererProfileName string
+	ChannelProfileName string
+	OrdererOrgs        []OrdererConfig
+	PeerOrgs           []PeerOrgConfig
+	Profiles           map[string]localconfig.Profile
+	Cryptogen          runner.Cryptogen
+	Deployment         Deployment
+
+	LocalStoppers []Stopper
+	LocalProcess  []ifrit.Process
 }
 
 type Chaincode struct {
@@ -184,16 +186,67 @@ func (w *World) BuildNetwork() {
 }
 
 func (w *World) ordererNetwork() {
-	var o *runner.Orderer
+	var (
+		zookeepers, kafkaBrokerList []string
+		zooServers                  []string
+		z                           *runner.Zookeeper
+		kafkas                      []*runner.Kafka
+		o                           *runner.Orderer
+		err                         error
+		zks                         []*runner.Zookeeper
+	)
 
 	o = w.Components.Orderer()
 	o.ConfigDir = w.Rootpath
 	o.LedgerLocation = filepath.Join(w.Rootpath, "ledger")
 	o.LogLevel = "debug"
-	ordererProcess := ifrit.Invoke(o.New())
-	Eventually(ordererProcess.Ready()).Should(BeClosed())
-	Consistently(ordererProcess.Wait()).ShouldNot(Receive())
-	w.RunningLocalProcess = append(w.RunningLocalProcess, ordererProcess)
+	for _, orderer := range w.OrdererOrgs {
+		if orderer.BrokerCount != 0 {
+			for id := 1; id <= orderer.ZookeeperCount; id++ {
+				// Start zookeeper
+				z = w.Components.Zookeeper(id, w.Network)
+				zooServers = append(zooServers, fmt.Sprintf("server.%d=zookeeper%d:2888:3888", id, id))
+				zookeepers = append(zookeepers, fmt.Sprintf("zookeeper%d:2181", id))
+				w.LocalStoppers = append(w.LocalStoppers, z)
+				zks = append(zks, z)
+			}
+			for _, zk := range zks {
+				zk.ZooServers = strings.Join(zooServers, " ")
+				err = zk.Start()
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			time.Sleep(2 * time.Second)
+			for id := 1; id <= orderer.BrokerCount; id++ {
+				// Start Kafka Broker
+				k := w.Components.Kafka(id, w.Network)
+				localKafkaAddress := w.Profiles[w.OrdererProfileName].Orderer.Kafka.Brokers[id-1]
+				k.HostPort, err = strconv.Atoi(strings.Split(localKafkaAddress, ":")[1])
+				Expect(err).NotTo(HaveOccurred())
+				k.KafkaMinInsyncReplicas = orderer.KafkaMinInsyncReplicas
+				k.KafkaDefaultReplicationFactor = orderer.KafkaDefaultReplicationFactor
+				k.KafkaAdvertisedListeners = localKafkaAddress
+				k.KafkaZookeeperConnect = strings.Join(zookeepers, ",")
+				k.LogLevel = "debug"
+				err = k.Start()
+				Expect(err).NotTo(HaveOccurred())
+
+				w.LocalStoppers = append(w.LocalStoppers, k)
+				kafkas = append(kafkas, k)
+				kafkaBrokerList = append(kafkaBrokerList, k.HostAddress)
+			}
+		}
+
+		ordererRunner := o.New()
+		ordererProcess := ifrit.Invoke(ordererRunner)
+		Eventually(ordererProcess.Ready()).Should(BeClosed())
+		Consistently(ordererProcess.Wait()).ShouldNot(Receive())
+		if orderer.BrokerCount != 0 {
+			Eventually(ordererRunner.Err(), 30*time.Second).Should(gbytes.Say("Start phase completed successfully"))
+		}
+
+		w.LocalProcess = append(w.LocalProcess, ordererProcess)
+	}
 }
 
 func (w *World) peerNetwork() {
@@ -206,7 +259,7 @@ func (w *World) peerNetwork() {
 			peerProcess := ifrit.Invoke(p.NodeStart())
 			Eventually(peerProcess.Ready()).Should(BeClosed())
 			Consistently(peerProcess.Wait()).ShouldNot(Receive())
-			w.RunningLocalProcess = append(w.RunningLocalProcess, peerProcess)
+			w.LocalProcess = append(w.LocalProcess, peerProcess)
 		}
 	}
 }
