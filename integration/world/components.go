@@ -8,10 +8,12 @@ package world
 
 import (
 	"os"
+	"time"
 
 	"github.com/hyperledger/fabric/integration/runner"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
+	"github.com/tedsuo/ifrit"
 )
 
 type Components struct {
@@ -68,4 +70,10 @@ func (c *Components) Peer() *runner.Peer {
 	return &runner.Peer{
 		Path: c.Paths["peer"],
 	}
+}
+
+func execute(r ifrit.Runner) {
+	p := ifrit.Invoke(r)
+	Eventually(p.Ready(), 2*time.Second).Should(BeClosed())
+	Eventually(p.Wait(), 45*time.Second).Should(Receive(BeNil()))
 }
